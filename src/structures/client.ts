@@ -20,6 +20,7 @@ export interface IClientOpts {
 			app: express.Application,
 			path: string,
 		};
+		appId: string;
 	};
 }
 
@@ -213,6 +214,26 @@ export class Client extends EventEmitter {
 		this.events = new SlackEventAdapter(this.opts.events.signingSecret);
 		this.opts.events.express.app.use(this.opts.events.express.path, this.events.requestListener());
 
+		this.events.on("app_uninstalled", async (data) => {
+			if (data.app_id !== this.opts.events.appId) {
+				return;
+			}
+			const teamId = data.team_id;
+			const rtm = this.rtmMap.get(teamId);
+			if (rtm) {
+				await rtm.disconnect();
+			}
+			this.webMap.delete(teamId);
+			this.rtmMap.delete(teamId);
+			for (const [token, tid] of this.tokenMap) {
+				if (tid === teamId) {
+					this.tokenMap.delete(token);
+				}
+			}
+			this.teams.delete(teamId);
+			this.users.delete(teamId);
+		});
+
 		for (const ev of ["message.app_home", "message.channels", "message.groups", "message.im", "message.mpim"]) {
 			this.events.on(ev, (data) => {
 				data.event.team_id = data.team_id;
@@ -220,12 +241,12 @@ export class Client extends EventEmitter {
 			});
 		}
 
-		rtm.on("reaction_added", (data) => {
+		this.events.on("reaction_added", (data) => {
 			const reaction = new Reaction(this, data.event, data.team_id);
 			this.emit("reactionAdded", reaction);
 		});
 
-		rtm.on("reaction_removed", (data) => {
+		this.events.on("reaction_removed", (data) => {
 			const reaction = new Reaction(this, data.event, data.team_id);
 			this.emit("reactionRemoved", reaction);
 		});
