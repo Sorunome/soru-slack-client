@@ -25,8 +25,8 @@ export class User extends IconBase {
 	public color: string;
 	public displayName: string;
 	public realName: string;
-	public statusText: string | null;
-	public statusEmoji: string | null;
+	public statusText: string | null = null;
+	public statusEmoji: string | null = null;
 	public partial = true;
 	public bot: boolean;
 	constructor(client: Client, data: IUserData) {
@@ -50,6 +50,12 @@ export class User extends IconBase {
 		this.displayName = (data.profile && data.profile.display_name as string) || this.realName;
 		this.icon = (data.icons || data.profile || null) as IIconData | null;
 		this.bot = Boolean(data.is_bot);
+		if (data.profile && data.profile.status_text) {
+			this.statusText = data.profile.status_text as string;
+		}
+		if (data.profile && data.profile.status_emoji) {
+			this.statusEmoji = data.profile.status_emoji as string;
+		}
 	}
 
 	public async load() {

@@ -6,6 +6,7 @@ import { IUserData, User } from "./user";
 import { IChannelData, Channel } from "./channel";
 import { ITeamData, Team } from "./team";
 import { Message } from "./message";
+import { Reaction } from "./reaction";
 import * as ua from "useragent-generator";
 import * as express from "express";
 
@@ -165,9 +166,36 @@ export class Client extends EventEmitter {
 				});
 			});
 
-			rtm.on("message", (data) => {
-				data.team_id = teamId;
-				this.handleMessageEvent(data);
+			if (!this.opts.events) {
+				rtm.on("message", (data) => {
+					data.team_id = teamId;
+					this.handleMessageEvent(data);
+				});
+
+				rtm.on("reaction_added", (data) => {
+					const reaction = new Reaction(this, data, teamId);
+					this.emit("reactionAdded", reaction);
+				});
+
+				rtm.on("reaction_removed", (data) => {
+					const reaction = new Reaction(this, data, teamId);
+					this.emit("reactionRemoved", reaction);
+				});
+			}
+
+			rtm.on("user_typing", (data) => {
+				const channel = this.getChannel(data.channel, teamId);
+				const user = this.getUser(data.user || data.bot_id, teamId);
+				if (channel && user) {
+					this.emit("typing", channel, user);
+				}
+			});
+
+			rtm.on("presence_change", (data) => {
+				const user = this.getUser(data.user || data.bot_id, teamId);
+				if (user) {
+					this.emit("presenceChange", user, data.presence);
+				}
 			});
 
 			try {
@@ -175,6 +203,31 @@ export class Client extends EventEmitter {
 			} catch (err) {
 				reject(err);
 			}
+		});
+	}
+
+	public async connectToEventsApi() {
+		if (!this.opts.events) {
+			return;
+		}
+		this.events = new SlackEventAdapter(this.opts.events.signingSecret);
+		this.opts.events.express.app.use(this.opts.events.express.path, this.events.requestListener());
+
+		for (const ev of ["message.app_home", "message.channels", "message.groups", "message.im", "message.mpim"]) {
+			this.events.on(ev, (data) => {
+				data.event.team_id = data.team_id;
+				this.handleMessageEvent(data.event);
+			});
+		}
+
+		rtm.on("reaction_added", (data) => {
+			const reaction = new Reaction(this, data.event, data.team_id);
+			this.emit("reactionAdded", reaction);
+		});
+
+		rtm.on("reaction_removed", (data) => {
+			const reaction = new Reaction(this, data.event, data.team_id);
+			this.emit("reactionRemoved", reaction);
 		});
 	}
 
@@ -274,14 +327,6 @@ export class Client extends EventEmitter {
 
 	public getTeam(teamId: string): Team | null {
 		return this.teams.get(teamId) || null;
-	}
-
-	public async connectToEventsApi() {
-		if (!this.opts.events) {
-			return;
-		}
-		this.events = new SlackEventAdapter(this.opts.events.signingSecret);
-		this.opts.events.express.app.use(this.opts.events.express.path, this.events.requestListener());
 	}
 
 	private handleMessageEvent(data) {

@@ -30,6 +30,7 @@ export class Message extends Base {
 	public meMessage: boolean;
 	public threadTs: string | null = null;
 	public files: any[] | null = null;
+	public partial = true;
 
 	constructor(client: Client, data: IMessageData, teamId?: string, channelId?: string, userId?: string) {
 		super(client);
@@ -69,6 +70,10 @@ export class Message extends Base {
 		}
 		if (data.hasOwnProperty("files")) {
 			this.files = data.files!;
+		}
+
+		if (this.text || this.blocks || this.attachments || this.files) {
+			this.partial = false;
 		}
 	}
 
