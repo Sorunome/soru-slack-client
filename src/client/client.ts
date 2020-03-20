@@ -1,20 +1,33 @@
 import { RTMClient } from "@slack/rtm-api";
 import { WebClient } from "@slack/web-api";
+import { SlackEventAdapter } from "@slack/events-api/dist/adapter";
 import { EventEmitter } from "events";
 import { IUserData, User } from "../structures/user";
 import { IChannelData, Channel } from "../structures/channel";
 import { ITeamData, Team } from "../structures/team";
+import { Message } from "../structures/message";
 import * as ua from "useragent-generator";
+import * as express from "express";
 
 export interface IClientOpts {
-	token: string;
+	token?: string;
 	cookie?: string;
+	noRtm?: boolean;
+	events?: {
+		signingSecret: string;
+		express: {
+			app: express.Application,
+			path: string,
+		};
+	};
 }
 
 export class Client extends EventEmitter {
 	private webMap: Map<string, WebClient> = new Map();
 	private rtmMap: Map<string, RTMClient> = new Map();
 	private tokenMap: Map<string, string> = new Map();
+	private events: SlackEventAdapter | null = null;
+	private startup: Set<string> = new Set();
 	public teams: Map<string, Team> = new Map();
 	public users: Map<string, User> = new Map();
 	constructor(private opts: IClientOpts) {
@@ -41,30 +54,41 @@ export class Client extends EventEmitter {
 		for (const [, rtm ] of this.rtmMap) {
 			await rtm.disconnect();
 		}
+		if (this.events) {
+			await this.events.stop();
+		}
 	}
 
 	public async connect() {
 		if (this.opts.token) {
 			await this.addToken(this.opts.token);
 		}
+		if (this.opts.events) {
+			await this.connectToEventsApi();
+		}
 	}
 
-	public async addToken(token: string) {
+	public async addToken(token: string, teamId: string = "") {
 		const useragent = ua.chrome("79.0.3945.117");
 		// tslint:disable-next-line no-any
 		const webHeaders: any = this.opts.cookie ? { headers: {
 			"Cookie": `d=${this.opts.cookie}`,
 			"User-Agent": useragent,
 		}} : {};
+		const web = new WebClient(token, webHeaders);
+		if (teamId) {
+			this.webMap.set(teamId, web);
+		}
+		if (this.opts.noRtm) {
+			return;
+		}
 		// tslint:disable-next-line no-any
 		const rtmHeaders: any = this.opts.cookie ? { tls: { headers: {
 			"Cookie": `d=${this.opts.cookie}`,
 			"User-Agent": useragent,
 		}}} : {};
-		const web = new WebClient(token, webHeaders);
 		const rtm = new RTMClient(token, rtmHeaders);
 		return new Promise(async (resolve, reject) => {
-			let teamId = "";
 			rtm.once("unable_to_rtm_start", (err) => {
 				reject(err);
 			});
@@ -73,8 +97,9 @@ export class Client extends EventEmitter {
 				this.emit("disconnected");
 			});
 
-			rtm.on("authenticated", (data) => {
+			rtm.on("authenticated", async (data) => {
 				teamId = data.team.id as string;
+				this.startup.add(teamId);
 				this.rtmMap.set(teamId, rtm);
 				this.webMap.set(teamId, web);
 				this.tokenMap.set(token, teamId);
@@ -88,6 +113,11 @@ export class Client extends EventEmitter {
 				if (clientUser) {
 					this.users.set(teamId, clientUser);
 				}
+				const clientTeam = this.teams.get(data.team.id);
+				if (clientTeam && clientTeam.partial) {
+					await clientTeam.load();
+				}
+				this.startup.delete(teamId);
 			});
 
 			rtm.on("ready", () => {
@@ -135,6 +165,11 @@ export class Client extends EventEmitter {
 				});
 			});
 
+			rtm.on("message", (data) => {
+				data.team_id = teamId;
+				this.handleMessageEvent(data);
+			});
+
 			try {
 				await rtm.start();
 			} catch (err) {
@@ -150,12 +185,16 @@ export class Client extends EventEmitter {
 			if (user) {
 				const oldUser = user._clone();
 				user._patch(data);
-				this.emit("changeUser", oldUser, user);
+				if (!this.startup.has(team.id)) {
+					this.emit("changeUser", oldUser, user);
+				}
 			} else {
 				const newUser = new User(this, data);
 				team.users.set(newUser.id, newUser);
 				this.rtm(team.id).subscribePresence([newUser.id]);
-				this.emit("addUser", newUser);
+				if (!this.startup.has(team.id)) {
+					this.emit("addUser", newUser);
+				}
 			}
 		} else if (createTeam) {
 			// tslint:disable-next-line no-any
@@ -187,11 +226,15 @@ export class Client extends EventEmitter {
 			if (chan) {
 				const oldChan = chan._clone();
 				chan._patch(data);
-				this.emit("changeChannel", oldChan, chan);
+				if (!this.startup.has(team.id)) {
+					this.emit("changeChannel", oldChan, chan);
+				}
 			} else {
 				const newChan = new Channel(this, data);
 				team.channels.set(newChan.id, newChan);
-				this.emit("addChannel", newChan);
+				if (!this.startup.has(team.id)) {
+					this.emit("addChannel", newChan);
+				}
 			}
 		} else if (createTeam) {
 			// tslint:disable-next-line no-any
@@ -217,15 +260,56 @@ export class Client extends EventEmitter {
 		if (team) {
 			const oldTeam = team._clone();
 			team._patch(data);
-			this.emit("changeTeam", oldTeam, team);
+			if (!this.startup.has(team.id)) {
+				this.emit("changeTeam", oldTeam, team);
+			}
 		} else {
 			const newTeam = new Team(this, data);
 			this.teams.set(newTeam.id, newTeam);
-			this.emit("addTeam", newTeam);
+			if (!this.startup.has(newTeam.id)) {
+				this.emit("addTeam", newTeam);
+			}
 		}
 	}
 
 	public getTeam(teamId: string): Team | null {
 		return this.teams.get(teamId) || null;
+	}
+
+	public async connectToEventsApi() {
+		if (!this.opts.events) {
+			return;
+		}
+		this.events = new SlackEventAdapter(this.opts.events.signingSecret);
+		this.opts.events.express.app.use(this.opts.events.express.path, this.events.requestListener());
+	}
+
+	private handleMessageEvent(data) {
+		if (["channel_join", "channel_name", "message_replied"].includes(data.subtype)) {
+			return;
+		}
+		const teamId = data.team_id;
+		let userId = data.user || data.bot_id;
+		const channelId = data.channel || data.item.channel;
+		for (const tryKey of ["message", "previous_message"]) {
+			if (data[tryKey]) {
+				if (!userId) {
+					userId = data[tryKey].user || data[tryKey].bot_id;
+				}
+			}
+		}
+		if (data.subtype === "message_changed") {
+			// we do an edit
+			const oldMessage = new Message(this, data.previous_message, teamId, channelId, userId);
+			const newMessage = new Message(this, data.message, teamId, channelId, userId);
+			this.emit("messageChanged", oldMessage, newMessage);
+		} else if (data.subtype === "message_deleted") {
+			// we do a message deletion
+			const oldMessage = new Message(this, data.previous_message, teamId, channelId, userId);
+			this.emit("messageDeleted", oldMessage);
+		} else {
+			const message = new Message(this, data, teamId, channelId, userId);
+			this.emit("message", message);
+		}
 	}
 }
