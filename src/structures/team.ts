@@ -43,7 +43,7 @@ export class Team extends IconBase {
 	public async load() {
 		// first load the team itself
 		{
-			const ret = await this.client.web.team.info({
+			const ret = await this.client.web(this.id).team.info({
 				team: this.id,
 			});
 			if (!ret || !ret.ok || !ret.team) {
@@ -53,7 +53,7 @@ export class Team extends IconBase {
 		}
 		// next load in the channels
 		{
-			const ret = await this.client.web.conversations.list({
+			const ret = await this.client.web(this.id).conversations.list({
 				types: "public_channel,private_channel,mpim,im",
 				limit: 1000,
 			});
@@ -67,7 +67,7 @@ export class Team extends IconBase {
 		}
 		// next load in the users
 		{
-			const ret = await this.client.web.users.list();
+			const ret = await this.client.web(this.id).users.list();
 			if (!ret || !ret.ok || !ret.members) {
 				throw new Error("Bad response");
 			}

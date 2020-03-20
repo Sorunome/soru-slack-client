@@ -35,19 +35,23 @@ export class Channel extends Base {
 	public topic: string | null = null;
 	public purpose: string | null = null;
 	public private: boolean;
-	public team: Team | null = null;
+	public team: Team;
 	public partial = true;
 	constructor(client: Client, data: IChannelData) {
 		super(client);
-		this._patch(data);
 		const team_id = data.team_id || (data.shared_team_ids && data.shared_team_ids[0]);
-		if (team_id) {
-			this.team = this.client.teams.get(team_id) || null;
+		if (!team_id) {
+			throw new Error("no associated team!");
 		}
+		const team = this.client.teams.get(team_id);
+		if (!team) {
+			throw new Error("team not found!");
+		}
+		this.team = team;
+		this._patch(data);
 	}
 
 	public _patch(data: IChannelData) {
-		const team_id = data.team_id || (data.shared_team_ids && data.shared_team_ids[0]) || (this.team && this.team.id);
 		this.id = data.id;
 		this.name = data.name || null;
 		let type: ChannelTypes = "unknown";
@@ -68,8 +72,8 @@ export class Channel extends Base {
 			this.purpose = data.purpose!.value;
 		}
 		this.private = Boolean(data.is_im || data.private);
-		if (team_id && data.hasOwnProperty("user")) {
-			const userObj = this.client.getUser(data.user!, team_id);
+		if (data.hasOwnProperty("user")) {
+			const userObj = this.team.users.get(data.user!);
 			if (userObj) {
 				this.users.set(userObj.id, userObj);
 			}
@@ -79,7 +83,7 @@ export class Channel extends Base {
 	public async load() {
 		// first load the info
 		{
-			const ret = await this.client.web.conversations.info({
+			const ret = await this.client.web(this.team.id).conversations.info({
 				channel: this.id,
 			});
 			if (!ret || !ret.ok || !ret.channel) {
@@ -88,8 +92,8 @@ export class Channel extends Base {
 			this._patch(ret.channel as IChannelData);
 		}
 		// now load the members
-		if (this.team) {
-			const ret = await this.client.web.conversations.members({
+		{
+			const ret = await this.client.web(this.team.id).conversations.members({
 				channel: this.id,
 			});
 			if (!ret || !ret.ok || !ret.members) {
@@ -106,7 +110,7 @@ export class Channel extends Base {
 	}
 
 	public async sendMessage(sendable: SendableType): Promise<string> {
-		const ret = await this.client.web.chat.postMessage({
+		const ret = await this.client.web(this.team.id).chat.postMessage({
 			...this.resolveSendable(sendable),
 			channel: this.id,
 			as_user: true,
@@ -115,7 +119,7 @@ export class Channel extends Base {
 	}
 
 	public async sendMeMessage(sendable: SendableType): Promise<string> {
-		const ret = await this.client.web.chat.meMessage({
+		const ret = await this.client.web(this.team.id).chat.meMessage({
 			...this.resolveSendable(sendable),
 			channel: this.id,
 		});
@@ -123,7 +127,7 @@ export class Channel extends Base {
 	}
 
 	public async deleteMessage(ts: string) {
-		await this.client.web.chat.delete({
+		await this.client.web(this.team.id).chat.delete({
 			channel: this.id,
 			ts,
 			as_user: true,
@@ -131,7 +135,7 @@ export class Channel extends Base {
 	}
 
 	public async replyMessage(sendable: SendableType, ts: string): Promise<string> {
-		const ret = await this.client.web.chat.postMessage({
+		const ret = await this.client.web(this.team.id).chat.postMessage({
 			...this.resolveSendable(sendable),
 			channel: this.id,
 			as_user: true,
@@ -141,7 +145,7 @@ export class Channel extends Base {
 	}
 
 	public async editMessage(sendable: SendableType, ts: string): Promise<string> {
-		const ret = await this.client.web.chat.update({
+		const ret = await this.client.web(this.team.id).chat.update({
 			...this.resolveSendable(sendable),
 			channel: this.id,
 			as_user: true,

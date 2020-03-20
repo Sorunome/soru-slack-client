@@ -19,7 +19,7 @@ export interface IUserData {
 }
 
 export class User extends IconBase {
-	public team: Team | null;
+	public team: Team;
 	public id: string;
 	public name: string;
 	public color: string;
@@ -31,9 +31,13 @@ export class User extends IconBase {
 	public bot: boolean;
 	constructor(client: Client, data: IUserData) {
 		super(client);
+		const team = this.client.teams.get(data.team_id);
+		if (!team) {
+			throw new Error("team not found!");
+		}
+		this.team = team;
 		this._patch(data);
-		this.team = this.client.teams.get(data.team_id) || null;
-		this.partial = !(this.team && (data.profile || data.icons));
+		this.partial = !(data.profile || data.icons);
 	}
 
 	public _patch(data: IUserData) {
@@ -49,7 +53,7 @@ export class User extends IconBase {
 	}
 
 	public async load() {
-		const ret = await this.client.web.users.info({
+		const ret = await this.client.web(this.team.id).users.info({
 			user: this.id,
 		});
 		if (!ret || !ret.ok || !ret.user) {

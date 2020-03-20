@@ -12,13 +12,44 @@ export interface IClientOpts {
 }
 
 export class Client extends EventEmitter {
+	private webMap: Map<string, WebClient> = new Map();
+	private rtmMap: Map<string, RTMClient> = new Map();
+	private tokenMap: Map<string, string> = new Map();
 	public teams: Map<string, Team> = new Map();
-	public channels: Map<string, Channel> = new Map();
-	public rtm: RTMClient;
-	public web: WebClient;
-	public user: User | null = null;
+	public users: Map<string, User> = new Map();
 	constructor(private opts: IClientOpts) {
 		super();
+	}
+
+	public web(teamId: string): WebClient {
+		const web = this.webMap.get(teamId);
+		if (!web) {
+			throw new Error("Team not found");
+		}
+		return web;
+	}
+
+	public rtm(teamId: string): RTMClient {
+		const rtm = this.rtmMap.get(teamId);
+		if (!rtm) {
+			throw new Error("Team not found");
+		}
+		return rtm;
+	}
+
+	public async disconnect() {
+		for (const [, rtm ] of this.rtmMap) {
+			await rtm.disconnect();
+		}
+	}
+
+	public async connect() {
+		if (this.opts.token) {
+			await this.addToken(this.opts.token);
+		}
+	}
+
+	public async addToken(token: string) {
 		const useragent = ua.chrome("79.0.3945.117");
 		// tslint:disable-next-line no-any
 		const webHeaders: any = this.opts.cookie ? { headers: {
@@ -30,82 +61,82 @@ export class Client extends EventEmitter {
 			"Cookie": `d=${this.opts.cookie}`,
 			"User-Agent": useragent,
 		}}} : {};
-		this.web = new WebClient(this.opts.token, webHeaders);
-		this.rtm = new RTMClient(this.opts.token, rtmHeaders);
-	}
-
-	public async disconnect() {
-		await this.rtm.disconnect();
-	}
-
-	public async connect() {
+		const web = new WebClient(token, webHeaders);
+		const rtm = new RTMClient(token, rtmHeaders);
 		return new Promise(async (resolve, reject) => {
-			this.rtm.once("unable_to_rtm_start", (err) => {
+			let teamId = "";
+			rtm.once("unable_to_rtm_start", (err) => {
 				reject(err);
 			});
 
-			this.rtm.on("disconnected", () => {
+			rtm.on("disconnected", () => {
 				this.emit("disconnected");
 			});
 
-			this.rtm.on("authenticated", (data) => {
-				resolve();
+			rtm.on("authenticated", (data) => {
+				teamId = data.team.id as string;
+				this.rtmMap.set(teamId, rtm);
+				this.webMap.set(teamId, web);
+				this.tokenMap.set(token, teamId);
 				this.addTeam(data.team);
 				this.addUser({
 					id: data.self.id as string,
 					name: data.self.name as string,
 					team_id: data.team.id as string,
 				});
-				this.user = this.getUser(data.self.id, data.team.id);
-				this.emit("connected");
+				const clientUser = this.getUser(data.self.id, data.team.id);
+				if (clientUser) {
+					this.users.set(teamId, clientUser);
+				}
 			});
 
+			rtm.on("ready", () => {
+				resolve();
+				this.emit("connected");
+			})
+
 			for (const ev of ["channel_joined", "group_joined", "mpim_joined", "im_created", "channel_created", "channel_rename", "group_rename"]) {
-				this.rtm.on(ev, (data) => {
-					if (this.user && this.user.team) {
-						data.channel.team_id = this.user.team.id;
-					}
+				rtm.on(ev, (data) => {
+					data.channel.team_id = teamId;
 					this.addChannel(data.channel);
 				});
 			}
 
 			for (const ev of ["team_join", "user_change"]) {
-				this.rtm.on(ev, (data) => {
+				rtm.on(ev, (data) => {
+					data.user.team_id = teamId;
 					this.addUser(data.user);
 				});
 			}
 
 			for (const ev of ["bot_added", "bot_changed"]) {
-				this.rtm.on(ev, (data) => {
+				rtm.on(ev, (data) => {
+					data.bot.team_id = teamId;
 					this.addUser(data.bot);
 				});
 			}
 
 			for (const ev of ["team_profile_change", "team_pref_change"]) {
-				this.rtm.on("team_pref_change", async () => {
-					if (this.user && this.user.team) {
-						const ret = await this.web.team.info({
-							team: this.user.team.id,
-						});
-						if (!ret || !ret.ok || !ret.team) {
-							return;
-						}
-						this.addTeam(ret.team as ITeamData);
+				rtm.on("team_pref_change", async () => {
+					const ret = await this.web(teamId).team.info({
+						team: teamId,
+					});
+					if (!ret || !ret.ok || !ret.team) {
+						return;
 					}
+					this.addTeam(ret.team as ITeamData);
 				});
 			}
 
-			this.rtm.on("team_rename", (data) => {
-				if (this.user && this.user.team) {
-					this.addTeam({
-						id: this.user.team.id,
-						name: data.name,
-					});
-				}
+			rtm.on("team_rename", (data) => {
+				this.addTeam({
+					id: teamId,
+					name: data.name,
+				});
 			});
 
 			try {
-				await this.rtm.start();
+				await rtm.start();
 			} catch (err) {
 				reject(err);
 			}
@@ -123,12 +154,12 @@ export class Client extends EventEmitter {
 			} else {
 				const newUser = new User(this, data);
 				team.users.set(newUser.id, newUser);
-				this.rtm.subscribePresence([newUser.id]);
+				this.rtm(team.id).subscribePresence([newUser.id]);
 				this.emit("addUser", newUser);
 			}
 		} else if (createTeam) {
 			// tslint:disable-next-line no-any
-			this.web.team.info({ team: data.team_id }).then((teamData: any) => {
+			this.web(data.team_id).team.info({ team: data.team_id }).then((teamData: any) => {
 				if (teamData.team) {
 					this.addTeam(teamData.team);
 					this.addUser(data, false);
@@ -145,22 +176,31 @@ export class Client extends EventEmitter {
 		return team.users.get(userId) || null;
 	}
 
-	public addChannel(data: IChannelData) {
-		let team: Team | null = null;
-		const team_id = data.team_id || (data.shared_team_ids && data.shared_team_ids[0]);
-		if (team_id) {
-			team = this.teams.get(team_id) || null;
+	public addChannel(data: IChannelData, createTeam = true) {
+		const teamId = data.team_id || (data.shared_team_ids && data.shared_team_ids[0]);
+		if (!teamId) {
+			return;
 		}
-		const chanMap = team ? team.channels : this.channels;
-		const chan = chanMap.get(data.id);
-		if (chan) {
-			const oldChan = chan._clone();
-			chan._patch(data);
-			this.emit("changeChannel", oldChan, chan);
-		} else {
-			const newChan = new Channel(this, data);
-			chanMap.set(newChan.id, newChan);
-			this.emit("addChannel", newChan);
+		const team = this.teams.get(teamId);
+		if (team) {
+			const chan = team.channels.get(data.id);
+			if (chan) {
+				const oldChan = chan._clone();
+				chan._patch(data);
+				this.emit("changeChannel", oldChan, chan);
+			} else {
+				const newChan = new Channel(this, data);
+				team.channels.set(newChan.id, newChan);
+				this.emit("addChannel", newChan);
+			}
+		} else if (createTeam) {
+			// tslint:disable-next-line no-any
+			this.web(teamId).team.info({ team: teamId }).then((teamData: any) => {
+				if (teamData.team) {
+					this.addTeam(teamData.team);
+					this.addChannel(data, false);
+				}
+			});
 		}
 	}
 
