@@ -2,10 +2,10 @@ import { RTMClient } from "@slack/rtm-api";
 import { WebClient } from "@slack/web-api";
 import { SlackEventAdapter } from "@slack/events-api/dist/adapter";
 import { EventEmitter } from "events";
-import { IUserData, User } from "../structures/user";
-import { IChannelData, Channel } from "../structures/channel";
-import { ITeamData, Team } from "../structures/team";
-import { Message } from "../structures/message";
+import { IUserData, User } from "./user";
+import { IChannelData, Channel } from "./channel";
+import { ITeamData, Team } from "./team";
+import { Message } from "./message";
 import * as ua from "useragent-generator";
 import * as express from "express";
 

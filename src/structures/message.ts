@@ -1,4 +1,4 @@
-import { Client } from "../client/client";
+import { Client } from "./client";
 import { Channel } from "./channel";
 import { User } from "./user";
 import { Base } from "./base";

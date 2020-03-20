@@ -1,4 +1,4 @@
-import { Client } from "../client/client";
+import { Client } from "./client";
 import { Base, IIconData, ICreatorValue } from "./base";
 import { Team } from "./team";
 import { User } from "./user";

@@ -1,4 +1,4 @@
-import { Client } from "../client/client";
+import { Client } from "./client";
 
 export interface IIconData {
 	[key: string]: string | boolean;
