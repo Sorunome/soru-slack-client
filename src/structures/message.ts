@@ -25,11 +25,11 @@ export interface IMessageData {
 	user?: string;
 	bot_id?: string;
 	text?: string;
-	blocks?: any[];
-	attachments?: any[];
+	blocks?: any[]; // tslint:disable-line no-any
+	attachments?: any[]; // tslint:disable-line no-any
 	subtype?: string;
 	thread_ts?: string;
-	files?: any[];
+	files?: any[]; // tslint:disable-line no-any
 	ts: string;
 }
 
@@ -38,11 +38,11 @@ export class Message extends Base {
 	public user: User;
 	public ts: string;
 	public text: string | null = null;
-	public blocks: any[] | null = null;
-	public attachments: any[] | null = null;
+	public blocks: any[] | null = null; // tslint:disable-line no-any
+	public attachments: any[] | null = null; // tslint:disable-line no-any
 	public meMessage: boolean;
 	public threadTs: string | null = null;
-	public files: any[] | null = null;
+	public files: any[] | null = null; // tslint:disable-line no-any
 	public partial = true;
 
 	constructor(client: Client, data: IMessageData, teamId?: string, channelId?: string, userId?: string) {

@@ -45,7 +45,7 @@ export interface ISendOpts {
 	iconUrl?: string;
 	iconEmoji?: string;
 	asUser?: boolean;
-};
+}
 
 export class Channel extends Base {
 	public members: Map<string, User> = new Map();
@@ -59,11 +59,11 @@ export class Channel extends Base {
 	public partial = true;
 	constructor(client: Client, data: IChannelData) {
 		super(client);
-		const team_id = data.team_id || (data.shared_team_ids && data.shared_team_ids[0]);
-		if (!team_id) {
+		const teamId = data.team_id || (data.shared_team_ids && data.shared_team_ids[0]);
+		if (!teamId) {
 			throw new Error("no associated team!");
 		}
-		const team = this.client.teams.get(team_id);
+		const team = this.client.teams.get(teamId);
 		if (!team) {
 			throw new Error("team not found!");
 		}
@@ -139,7 +139,7 @@ export class Channel extends Base {
 	}
 
 	public async sendMessage(sendable: SendableType, opts?: ISendOpts): Promise<string> {
-		const send: any = {
+		const send: any = { // tslint:disable-line no-any
 			...this.resolveSendable(sendable),
 			channel: this.id,
 		};
@@ -157,7 +157,7 @@ export class Channel extends Base {
 	}
 
 	public async deleteMessage(ts: string, opts?: ISendOpts) {
-		const send: any = {
+		const send: any = { // tslint:disable-line no-any
 			channel: this.id,
 			ts,
 		};
@@ -166,7 +166,7 @@ export class Channel extends Base {
 	}
 
 	public async replyMessage(sendable: SendableType, ts: string, opts?: ISendOpts): Promise<string> {
-		const send: any = {
+		const send: any = { // tslint:disable-line no-any
 			...this.resolveSendable(sendable),
 			channel: this.id,
 			thread_ts: ts,
@@ -192,7 +192,7 @@ export class Channel extends Base {
 		} : sendable;
 	}
 
-	private applyOpts(send: any, opts?: ISendOpts) {
+	private applyOpts(send: any, opts?: ISendOpts) { // tslint:disable-line no-any
 		if (opts) {
 			if (opts.username) {
 				send.username = opts.username;

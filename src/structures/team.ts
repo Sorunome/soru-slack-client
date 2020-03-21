@@ -25,7 +25,7 @@ export interface ITeamData {
 
 export class Team extends IconBase {
 	public channels: Map<string, Channel> = new Map();
-	public users: Map<string, User> = new Map();;
+	public users: Map<string, User> = new Map();
 	public id: string;
 	public name: string;
 	public domain: string;
@@ -59,7 +59,7 @@ export class Team extends IconBase {
 		}
 		for (const [, channel] of this.channels) {
 			await channel.join();
-		};
+		}
 	}
 
 	public async load() {

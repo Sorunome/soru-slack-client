@@ -26,6 +26,12 @@ import * as express from "express";
 
 const log = new Logger("Client");
 
+export interface IStoreToken {
+	token: string;
+	userId: string;
+	teamId: string;
+}
+
 export interface IClientOpts {
 	token?: string;
 	cookie?: string;
@@ -39,19 +45,21 @@ export interface IClientOpts {
 		clientId: string;
 		clientSecret: string;
 		signingSecret: string;
+		storeToken: (t: IStoreToken) => Promise<void>,
+		getTokens: () => Promise<IStoreToken[]>,
 	};
 }
 
 const RECONNECT_PAUSE = 15000;
 
 export class Client extends EventEmitter {
+	public tokens: Map<string, string> = new Map();
+	public teams: Map<string, Team> = new Map();
+	public users: Map<string, User> = new Map();
 	private webMap: Map<string, WebClient> = new Map();
 	private rtmMap: Map<string, RTMClient> = new Map();
 	private events: SlackEventAdapter | null = null;
 	private startup: Set<string> = new Set();
-	public tokens: Map<string, string> = new Map();
-	public teams: Map<string, Team> = new Map();
-	public users: Map<string, User> = new Map();
 	constructor(private opts: IClientOpts) {
 		super();
 	}
@@ -133,6 +141,13 @@ export class Client extends EventEmitter {
 			if (teamId) {
 				this.startup.delete(teamId);
 			}
+			if (this.opts.events) {
+				await this.opts.events.storeToken({
+					token,
+					teamId,
+					userId,
+				});
+			}
 			return;
 		}
 		log.verbose("connecting to RTM...");
@@ -156,9 +171,17 @@ export class Client extends EventEmitter {
 			}, RECONNECT_PAUSE);
 		};
 		return new Promise(async (resolve, reject) => {
-			rtm.once("unable_to_rtm_start", (err) => {
+			rtm.once("unable_to_rtm_start", async (err) => {
 				log.debug("RTM event: unable_to_rtm_start");
 				if (err.data && err.data.error === "not_allowed_token_type" && this.opts.events) {
+					this.opts.noRtm = true;
+					if (this.opts.events) {
+						await this.opts.events.storeToken({
+							token,
+							teamId,
+							userId,
+						});
+					}
 					resolve();
 				} else {
 					log.error("Failed to start rtm client", err);
@@ -196,6 +219,13 @@ export class Client extends EventEmitter {
 				const clientTeam = this.teams.get(data.team.id);
 				if (clientTeam && clientTeam.partial) {
 					await clientTeam.load();
+				}
+				if (this.opts.events) {
+					await this.opts.events.storeToken({
+						token,
+						teamId,
+						userId,
+					});
 				}
 				this.startup.delete(teamId);
 			});
@@ -327,7 +357,8 @@ export class Client extends EventEmitter {
 		});
 		this.opts.events.express.app.use(this.opts.events.express.path + "/events", this.events.requestListener());
 
-		this.opts.events.express.app.get(this.opts.events.express.path + "/oauth/" + encodeURIComponent(this.opts.events.appId),
+		const appId = this.opts.events.appId;
+		this.opts.events.express.app.get(`${this.opts.events.express.path}/oauth/${encodeURIComponent(appId)}`,
 			async (req: express.Request, res: express.Response) => {
 			log.debug("New oauth request");
 			const data = await (new WebClient()).oauth.v2.access({
@@ -335,20 +366,21 @@ export class Client extends EventEmitter {
 				client_secret: this.opts.events!.clientSecret,
 				code: req.query.code,
 			});
-			if (data.app_id !== this.opts.events!.appId) {
+			if (data.app_id !== appId) {
 				log.silly("Not for our app, ignoring...");
 				return;
 			}
 			const STATUS_FORBIDDEN = 403;
 			if (!data || !data.ok) {
 				log.debug("Failed to get oauth token", data);
-				res.status(STATUS_FORBIDDEN).send(this.getHtmlResponse("Failed to get OAuth token", encodeURIComponent(data.error as string)));
+				res.status(STATUS_FORBIDDEN).send(this.getHtmlResponse("Failed to get OAuth token",
+					encodeURIComponent(data.error as string)));
 				return;
 			}
 			log.debug("Successfully verified oauth");
-			const teamId = (data.team as any).id;
-			await this.addToken((data as any).access_token, teamId, (data as any).bot_user_id);
-			
+			const teamId = (data.team as any).id; // tslint:disable-line no-any
+			await this.addToken((data as any).access_token, teamId, (data as any).bot_user_id); // tslint:disable-line no-any
+
 			const newTeam = this.teams.get(teamId);
 			if (newTeam) {
 				this.startup.add(teamId);
@@ -359,7 +391,7 @@ export class Client extends EventEmitter {
 		});
 
 		this.events.on("app_uninstalled", async (data) => {
-			if (data.api_app_id !== this.opts.events!.appId) {
+			if (data.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: app_uninstalled");
@@ -377,7 +409,7 @@ export class Client extends EventEmitter {
 
 		for (const ev of ["im_created", "channel_created", "channel_rename", "group_rename"]) {
 			this.events.on(ev, (data, evt) => {
-				if (evt.api_app_id !== this.opts.events!.appId) {
+				if (evt.api_app_id !== appId) {
 					return;
 				}
 				log.debug("Events event: im/channel/group_created/rename");
@@ -388,7 +420,7 @@ export class Client extends EventEmitter {
 
 		for (const ev of ["team_join", "user_change"]) {
 			this.events.on(ev, (data, evt) => {
-				if (evt.api_app_id !== this.opts.events!.appId) {
+				if (evt.api_app_id !== appId) {
 					return;
 				}
 				log.debug("Events event: team_join/user_change");
@@ -398,7 +430,7 @@ export class Client extends EventEmitter {
 		}
 
 		this.events.on("message", (data, evt) => {
-			if (evt.api_app_id !== this.opts.events!.appId) {
+			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: message");
@@ -407,7 +439,7 @@ export class Client extends EventEmitter {
 		});
 
 		this.events.on("reaction_added", (data, evt) => {
-			if (evt.api_app_id !== this.opts.events!.appId) {
+			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: reaction_added");
@@ -416,7 +448,7 @@ export class Client extends EventEmitter {
 		});
 
 		this.events.on("reaction_removed", (data, evt) => {
-			if (evt.api_app_id !== this.opts.events!.appId) {
+			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: reaction_removed");
@@ -425,7 +457,7 @@ export class Client extends EventEmitter {
 		});
 
 		this.events.on("team_rename", (data, evt) => {
-			if (evt.api_app_id !== this.opts.events!.appId) {
+			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: team_rename");
@@ -436,7 +468,7 @@ export class Client extends EventEmitter {
 		});
 
 		this.events.on("member_joined_channel", (data, evt) => {
-			if (evt.api_app_id !== this.opts.events!.appId) {
+			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: member_joined_channel");
@@ -449,7 +481,7 @@ export class Client extends EventEmitter {
 		});
 
 		this.events.on("member_left_channel", (data, evt) => {
-			if (evt.api_app_id !== this.opts.events!.appId) {
+			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: member_left_channel");
@@ -464,6 +496,12 @@ export class Client extends EventEmitter {
 		this.events.on("error", (error) => {
 			log.warn("Events API error", error);
 		});
+
+		// alright, and don't forget to load the tokens!
+		const tokens = await this.opts.events.getTokens();
+		for (const t of tokens) {
+			await this.addToken(t.token, t.teamId, t.userId);
+		}
 	}
 
 	public addUser(data: IUserData, createTeam = true) {
@@ -481,6 +519,7 @@ export class Client extends EventEmitter {
 				const newUser = new User(this, data);
 				team.users.set(newUser.id, newUser);
 				if (this.rtmMap.has(team.id)) {
+					// tslint:disable-next-line no-floating-promises
 					this.rtm(team.id).subscribePresence([newUser.id]);
 				}
 				if (!this.startup.has(team.id) && !newUser.fullBot) {
@@ -488,7 +527,7 @@ export class Client extends EventEmitter {
 				}
 			}
 		} else if (createTeam) {
-			// tslint:disable-next-line no-any
+			// tslint:disable-next-line no-any no-floating-promises
 			this.web(data.team_id).team.info({ team: data.team_id }).then((teamData: any) => {
 				if (teamData.team) {
 					this.addTeam(teamData.team);
@@ -524,13 +563,14 @@ export class Client extends EventEmitter {
 				const newChan = new Channel(this, data);
 				team.channels.set(newChan.id, newChan);
 				if (!this.startup.has(team.id)) {
+					// tslint:disable-next-line no-floating-promises
 					newChan.join().catch((err) => {}).then(() => {
 						this.emit("addChannel", newChan);
 					});
 				}
 			}
 		} else if (createTeam) {
-			// tslint:disable-next-line no-any
+			// tslint:disable-next-line no-any no-floating-promises
 			this.web(teamId).team.info({ team: teamId }).then((teamData: any) => {
 				if (teamData.team) {
 					this.addTeam(teamData.team);
