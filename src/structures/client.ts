@@ -157,21 +157,7 @@ export class Client extends EventEmitter {
 			rtm.on("ready", () => {
 				resolve();
 				this.emit("connected");
-			})
-
-			for (const ev of ["channel_joined", "group_joined", "mpim_joined", "im_created", "channel_created", "channel_rename", "group_rename"]) {
-				rtm.on(ev, (data) => {
-					data.channel.team_id = teamId;
-					this.addChannel(data.channel);
-				});
-			}
-
-			for (const ev of ["team_join", "user_change"]) {
-				rtm.on(ev, (data) => {
-					data.user.team_id = teamId;
-					this.addUser(data.user);
-				});
-			}
+			});
 
 			for (const ev of ["bot_added", "bot_changed"]) {
 				rtm.on(ev, (data) => {
@@ -181,7 +167,7 @@ export class Client extends EventEmitter {
 			}
 
 			for (const ev of ["team_profile_change", "team_pref_change"]) {
-				rtm.on("team_pref_change", async () => {
+				rtm.on(ev, async () => {
 					const ret = await this.web(teamId).team.info({
 						team: teamId,
 					});
@@ -189,30 +175,6 @@ export class Client extends EventEmitter {
 						return;
 					}
 					this.addTeam(ret.team as ITeamData);
-				});
-			}
-
-			rtm.on("team_rename", (data) => {
-				this.addTeam({
-					id: teamId,
-					name: data.name,
-				});
-			});
-
-			if (!this.opts.events) {
-				rtm.on("message", (data) => {
-					data.team_id = teamId;
-					this.handleMessageEvent(data);
-				});
-
-				rtm.on("reaction_added", (data) => {
-					const reaction = new Reaction(this, data, teamId);
-					this.emit("reactionAdded", reaction);
-				});
-
-				rtm.on("reaction_removed", (data) => {
-					const reaction = new Reaction(this, data, teamId);
-					this.emit("reactionRemoved", reaction);
 				});
 			}
 
@@ -230,6 +192,62 @@ export class Client extends EventEmitter {
 					this.emit("presenceChange", user, data.presence);
 				}
 			});
+
+			if (!this.opts.events) {
+				for (const ev of ["im_created", "channel_created", "channel_rename", "group_rename"]) {
+					rtm.on(ev, (data) => {
+						data.channel.team_id = teamId;
+						this.addChannel(data.channel);
+					});
+				}
+
+				for (const ev of ["team_join", "user_change"]) {
+					rtm.on(ev, (data) => {
+						data.user.team_id = teamId;
+						this.addUser(data.user);
+					});
+				}
+
+				rtm.on("message", (data) => {
+					data.team_id = teamId;
+					this.handleMessageEvent(data);
+				});
+
+				rtm.on("reaction_added", (data) => {
+					const reaction = new Reaction(this, data, teamId);
+					this.emit("reactionAdded", reaction);
+				});
+
+				rtm.on("reaction_removed", (data) => {
+					const reaction = new Reaction(this, data, teamId);
+					this.emit("reactionRemoved", reaction);
+				});
+
+				rtm.on("team_rename", (data) => {
+					this.addTeam({
+						id: teamId,
+						name: data.name,
+					});
+				});
+
+				rtm.on("member_joined_channel", (data) => {
+					const userObj = this.getUser(data.user, teamId);
+					const chanObj = this.getChannel(data.channel, teamId);
+					if (userObj && chanObj) {
+						chanObj.members.set(userObj.id, userObj);
+						this.emit("memberJoinedChannel", userObj, chanObj);
+					}
+				});
+
+				rtm.on("member_left_channel", (data) => {
+					const userObj = this.getUser(data.user, teamId);
+					const chanObj = this.getChannel(data.channel, teamId);
+					if (userObj && chanObj) {
+						chanObj.members.delete(userObj.id);
+						this.emit("memberLeftChannel", userObj, chanObj);
+					}
+				});
+			}
 
 			try {
 				await rtm.start();
@@ -295,6 +313,26 @@ export class Client extends EventEmitter {
 			this.users.delete(teamId);
 		});
 
+		for (const ev of ["im_created", "channel_created", "channel_rename", "group_rename"]) {
+			this.events.on(ev, (data, evt) => {
+				if (evt.api_app_id !== this.opts.events!.appId) {
+					return;
+				}
+				data.channel.team_id = evt.team_id;
+				this.addChannel(data.channel);
+			});
+		}
+
+		for (const ev of ["team_join", "user_change"]) {
+			this.events.on(ev, (data, evt) => {
+				if (evt.api_app_id !== this.opts.events!.appId) {
+					return;
+				}
+				data.user.team_id = evt.team_id;
+				this.addUser(data.user);
+			});
+		}
+
 		this.events.on("message", (data, evt) => {
 			if (evt.api_app_id !== this.opts.events!.appId) {
 				return;
@@ -317,6 +355,40 @@ export class Client extends EventEmitter {
 			}
 			const reaction = new Reaction(this, data, evt.team_id);
 			this.emit("reactionRemoved", reaction);
+		});
+
+		this.events.on("team_rename", (data, evt) => {
+			if (evt.api_app_id !== this.opts.events!.appId) {
+				return;
+			}
+			this.addTeam({
+				id: evt.team_id,
+				name: data.name,
+			});
+		});
+
+		this.events.on("member_joined_channel", (data, evt) => {
+			if (evt.api_app_id !== this.opts.events!.appId) {
+				return;
+			}
+			const userObj = this.getUser(data.user, evt.team_id);
+			const chanObj = this.getChannel(data.channel, evt.team_id);
+			if (userObj && chanObj) {
+				chanObj.members.set(userObj.id, userObj);
+				this.emit("memberJoinedChannel", userObj, chanObj);
+			}
+		});
+
+		this.events.on("member_left_channel", (data, evt) => {
+			if (evt.api_app_id !== this.opts.events!.appId) {
+				return;
+			}
+			const userObj = this.getUser(data.user, evt.team_id);
+			const chanObj = this.getChannel(data.channel, evt.team_id);
+			if (userObj && chanObj) {
+				chanObj.members.delete(userObj.id);
+				this.emit("memberLeftChannel", userObj, chanObj);
+			}
 		});
 
 		this.events.on("error", (error) => {

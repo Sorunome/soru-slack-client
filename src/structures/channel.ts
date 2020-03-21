@@ -35,7 +35,7 @@ export interface ISendOpts {
 };
 
 export class Channel extends Base {
-	public users: Map<string, User> = new Map();
+	public members: Map<string, User> = new Map();
 	public id: string;
 	public name: string | null = null;
 	public type: ChannelTypes;
@@ -82,7 +82,7 @@ export class Channel extends Base {
 		if (data.hasOwnProperty("user")) {
 			const userObj = this.team.users.get(data.user!);
 			if (userObj) {
-				this.users.set(userObj.id, userObj);
+				this.members.set(userObj.id, userObj);
 			}
 		}
 	}
@@ -107,9 +107,9 @@ export class Channel extends Base {
 				throw new Error("Bad response");
 			}
 			for (const memberId of ret.members as string[]) {
-				const userObj = this.client.getUser(memberId, this.team.id);
+				const userObj = this.team.users.get(memberId);
 				if (userObj) {
-					this.users.set(userObj.id, userObj);
+					this.members.set(userObj.id, userObj);
 				}
 			}
 		}
