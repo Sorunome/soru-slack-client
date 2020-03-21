@@ -81,6 +81,7 @@ export class Client extends EventEmitter {
 		}} : {};
 		const web = new WebClient(token, webHeaders);
 		if (teamId) {
+			this.startup.add(teamId);
 			this.webMap.set(teamId, web);
 			this.addTeam({
 				id: teamId,
@@ -106,6 +107,9 @@ export class Client extends EventEmitter {
 			}
 		}
 		if (this.opts.noRtm) {
+			if (teamId) {
+				this.startup.delete(teamId);
+			}
 			return;
 		}
 		// tslint:disable-next-line no-any
@@ -116,7 +120,11 @@ export class Client extends EventEmitter {
 		const rtm = new RTMClient(token, rtmHeaders);
 		return new Promise(async (resolve, reject) => {
 			rtm.once("unable_to_rtm_start", (err) => {
-				reject(err);
+				if (err.data && err.data.error === "not_allowed_token_type" && this.opts.events) {
+					resolve();
+				} else {
+					reject(err);
+				}
 			});
 
 			rtm.on("disconnected", () => {
@@ -238,10 +246,7 @@ export class Client extends EventEmitter {
 		this.events = new SlackEventAdapter(this.opts.events.signingSecret, {
 			includeBody: true,
 		});
-		this.opts.events.express.app.use(this.opts.events.express.path + "/events", (req, res, next) => {
-			console.log("yaaaay");
-			next();
-		}, this.events.requestListener());
+		this.opts.events.express.app.use(this.opts.events.express.path + "/events", this.events.requestListener());
 
 		this.opts.events.express.app.get(this.opts.events.express.path + "/oauth/" + encodeURIComponent(this.opts.events.appId),
 			async (req: express.Request, res: express.Response) => {
@@ -259,16 +264,13 @@ export class Client extends EventEmitter {
 				return;
 			}
 			const teamId = (data.team as any).id;
-			try {
-				await this.addToken((data as any).access_token, teamId, (data as any).bot_user_id);
-			} catch (err) {
-				if (!err.data || err.data.error !== "not_allowed_token_type") {
-					throw err;
-				}
-			}
+			await this.addToken((data as any).access_token, teamId, (data as any).bot_user_id);
+			
 			const newTeam = this.teams.get(teamId);
 			if (newTeam) {
+				this.startup.add(teamId);
 				await newTeam.joinAllChannels();
+				this.startup.delete(teamId);
 			}
 			res.send(this.getHtmlResponse("Successfully added slack bot to team", ""));
 		});
@@ -325,12 +327,13 @@ export class Client extends EventEmitter {
 
 	public addUser(data: IUserData, createTeam = true) {
 		const team = this.teams.get(data.team_id);
+		const userId = (data.id || data.bot_id) as string;
 		if (team) {
-			const user = team.users.get(data.id);
+			const user = team.users.get(userId);
 			if (user) {
 				const oldUser = user._clone();
 				user._patch(data);
-				if (!this.startup.has(team.id)) {
+				if (!this.startup.has(team.id) && !user.fullBot) {
 					this.emit("changeUser", oldUser, user);
 				}
 			} else {
@@ -339,7 +342,7 @@ export class Client extends EventEmitter {
 				if (this.rtmMap.has(team.id)) {
 					this.rtm(team.id).subscribePresence([newUser.id]);
 				}
-				if (!this.startup.has(team.id)) {
+				if (!this.startup.has(team.id) && !newUser.fullBot) {
 					this.emit("addUser", newUser);
 				}
 			}
@@ -380,7 +383,9 @@ export class Client extends EventEmitter {
 				const newChan = new Channel(this, data);
 				team.channels.set(newChan.id, newChan);
 				if (!this.startup.has(team.id)) {
-					this.emit("addChannel", newChan);
+					newChan.join().catch((err) => {}).then(() => {
+						this.emit("addChannel", newChan);
+					});
 				}
 			}
 		} else if (createTeam) {
@@ -436,6 +441,10 @@ export class Client extends EventEmitter {
 	private handleMessageEvent(data) {
 		if (["channel_join", "channel_name", "message_replied"].includes(data.subtype)) {
 			return;
+		}
+		if (data.bot_id) {
+			// okay, we need to create the bot
+			this.addUser(data);
 		}
 		const teamId = data.team_id;
 		let userId = data.user || data.bot_id;

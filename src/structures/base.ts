@@ -50,4 +50,8 @@ export class IconBase extends Base {
 		})[0];
 		return this.icon[key] as string || null;
 	}
+
+	public get iconEmoji(): string | null {
+		return (this.icon && this.icon.emoji as string) || null;
+	}
 }

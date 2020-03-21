@@ -27,6 +27,13 @@ interface ISendMessage {
 
 type SendableType = ISendMessage | string;
 
+export interface ISendOpts {
+	username?: string;
+	iconUrl?: string;
+	iconEmoji?: string;
+	asUser?: boolean;
+};
+
 export class Channel extends Base {
 	public users: Map<string, User> = new Map();
 	public id: string;
@@ -118,12 +125,13 @@ export class Channel extends Base {
 		});
 	}
 
-	public async sendMessage(sendable: SendableType): Promise<string> {
-		const ret = await this.client.web(this.team.id).chat.postMessage({
+	public async sendMessage(sendable: SendableType, opts?: ISendOpts): Promise<string> {
+		const send: any = {
 			...this.resolveSendable(sendable),
 			channel: this.id,
-			as_user: true,
-		});
+		};
+		this.applyOpts(send, opts);
+		const ret = await this.client.web(this.team.id).chat.postMessage(send);
 		return ret.ts as string;
 	}
 
@@ -135,21 +143,23 @@ export class Channel extends Base {
 		return ret.ts as string;
 	}
 
-	public async deleteMessage(ts: string) {
-		await this.client.web(this.team.id).chat.delete({
+	public async deleteMessage(ts: string, opts?: ISendOpts) {
+		const send: any = {
 			channel: this.id,
 			ts,
-			as_user: true,
-		});
+		};
+		this.applyOpts(send, opts);
+		await this.client.web(this.team.id).chat.delete(send);
 	}
 
-	public async replyMessage(sendable: SendableType, ts: string): Promise<string> {
-		const ret = await this.client.web(this.team.id).chat.postMessage({
+	public async replyMessage(sendable: SendableType, ts: string, opts?: ISendOpts): Promise<string> {
+		const send: any = {
 			...this.resolveSendable(sendable),
 			channel: this.id,
-			as_user: true,
 			thread_ts: ts,
-		});
+		};
+		this.applyOpts(send, opts);
+		const ret = await this.client.web(this.team.id).chat.postMessage(send);
 		return ret.ts as string;
 	}
 
@@ -167,5 +177,22 @@ export class Channel extends Base {
 		return typeof sendable === "string" ? {
 			text: sendable,
 		} : sendable;
+	}
+
+	private applyOpts(send: any, opts?: ISendOpts) {
+		if (opts) {
+			if (opts.username) {
+				send.username = opts.username;
+				if (opts.iconUrl) {
+					send.icon_url = opts.iconUrl;
+				}
+				if (opts.iconEmoji) {
+					send.icon_emoji = opts.iconEmoji;
+				}
+			}
+			if (opts.asUser) {
+				send.as_user = true;
+			}
+		}
 	}
 }
