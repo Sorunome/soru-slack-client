@@ -40,6 +40,15 @@ export class Team extends IconBase {
 		}
 	}
 
+	public async joinAllChannels() {
+		if (this.partial) {
+			await this.load();
+		}
+		for (const [, channel] of this.channels) {
+			await channel.join();
+		};
+	}
+
 	public async load() {
 		// first load the team itself
 		{

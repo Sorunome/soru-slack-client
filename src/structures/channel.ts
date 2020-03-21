@@ -109,6 +109,15 @@ export class Channel extends Base {
 		this.partial = false;
 	}
 
+	public async join() {
+		if (["im"].includes(this.type)) {
+			return;
+		}
+		await this.client.web(this.team.id).conversations.join({
+			channel: this.id,
+		});
+	}
+
 	public async sendMessage(sendable: SendableType): Promise<string> {
 		const ret = await this.client.web(this.team.id).chat.postMessage({
 			...this.resolveSendable(sendable),

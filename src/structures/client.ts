@@ -1,5 +1,5 @@
 import { RTMClient } from "@slack/rtm-api";
-import { WebClient } from "@slack/web-api";
+import { WebClient, WebAPICallResult } from "@slack/web-api";
 import { SlackEventAdapter } from "@slack/events-api/dist/adapter";
 import { EventEmitter } from "events";
 import { IUserData, User } from "./user";
@@ -15,12 +15,14 @@ export interface IClientOpts {
 	cookie?: string;
 	noRtm?: boolean;
 	events?: {
-		signingSecret: string;
 		express: {
 			app: express.Application,
 			path: string,
 		};
 		appId: string;
+		clientId: string;
+		clientSecret: string;
+		signingSecret: string;
 	};
 }
 
@@ -70,7 +72,7 @@ export class Client extends EventEmitter {
 		}
 	}
 
-	public async addToken(token: string, teamId: string = "") {
+	public async addToken(token: string, teamId: string = "", userId: string = "") {
 		const useragent = ua.chrome("79.0.3945.117");
 		// tslint:disable-next-line no-any
 		const webHeaders: any = this.opts.cookie ? { headers: {
@@ -80,6 +82,28 @@ export class Client extends EventEmitter {
 		const web = new WebClient(token, webHeaders);
 		if (teamId) {
 			this.webMap.set(teamId, web);
+			this.addTeam({
+				id: teamId,
+				name: teamId,
+			});
+			const clientTeam = this.teams.get(teamId);
+			if (clientTeam && clientTeam.partial) {
+				await clientTeam.load();
+			}
+		}
+		if (userId) {
+			this.addUser({
+				id: userId,
+				name: userId,
+				team_id: teamId,
+			});
+			const clientUser = this.getUser(userId, teamId);
+			if (clientUser) {
+				this.users.set(teamId, clientUser);
+				if (clientUser.partial) {
+					await clientUser.load();
+				}
+			}
 		}
 		if (this.opts.noRtm) {
 			return;
@@ -211,11 +235,46 @@ export class Client extends EventEmitter {
 		if (!this.opts.events) {
 			return;
 		}
-		this.events = new SlackEventAdapter(this.opts.events.signingSecret);
-		this.opts.events.express.app.use(this.opts.events.express.path, this.events.requestListener());
+		this.events = new SlackEventAdapter(this.opts.events.signingSecret, {
+			includeBody: true,
+		});
+		this.opts.events.express.app.use(this.opts.events.express.path + "/events", (req, res, next) => {
+			console.log("yaaaay");
+			next();
+		}, this.events.requestListener());
+
+		this.opts.events.express.app.get(this.opts.events.express.path + "/oauth/" + encodeURIComponent(this.opts.events.appId),
+			async (req: express.Request, res: express.Response) => {
+			const data = await (new WebClient()).oauth.v2.access({
+				client_id: this.opts.events!.clientId,
+				client_secret: this.opts.events!.clientSecret,
+				code: req.query.code,
+			});
+			if (data.app_id !== this.opts.events!.appId) {
+				return;
+			}
+			const STATUS_FORBIDDEN = 403;
+			if (!data || !data.ok) {
+				res.status(STATUS_FORBIDDEN).send(this.getHtmlResponse("Failed to get OAuth token", encodeURIComponent(data.error as string)));
+				return;
+			}
+			const teamId = (data.team as any).id;
+			try {
+				await this.addToken((data as any).access_token, teamId, (data as any).bot_user_id);
+			} catch (err) {
+				if (!err.data || err.data.error !== "not_allowed_token_type") {
+					throw err;
+				}
+			}
+			const newTeam = this.teams.get(teamId);
+			if (newTeam) {
+				await newTeam.joinAllChannels();
+			}
+			res.send(this.getHtmlResponse("Successfully added slack bot to team", ""));
+		});
 
 		this.events.on("app_uninstalled", async (data) => {
-			if (data.app_id !== this.opts.events.appId) {
+			if (data.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
 			const teamId = data.team_id;
@@ -234,21 +293,33 @@ export class Client extends EventEmitter {
 			this.users.delete(teamId);
 		});
 
-		for (const ev of ["message.app_home", "message.channels", "message.groups", "message.im", "message.mpim"]) {
-			this.events.on(ev, (data) => {
-				data.event.team_id = data.team_id;
-				this.handleMessageEvent(data.event);
-			});
-		}
+		this.events.on("message", (data, evt) => {
+			if (evt.api_app_id !== this.opts.events!.appId) {
+				return;
+			}
+			data.team_id = evt.team_id;
+			this.handleMessageEvent(data);
+		});
 
-		this.events.on("reaction_added", (data) => {
-			const reaction = new Reaction(this, data.event, data.team_id);
+		this.events.on("reaction_added", (data, evt) => {
+			if (evt.api_app_id !== this.opts.events!.appId) {
+				return;
+			}
+			const reaction = new Reaction(this, data, evt.team_id);
 			this.emit("reactionAdded", reaction);
 		});
 
-		this.events.on("reaction_removed", (data) => {
-			const reaction = new Reaction(this, data.event, data.team_id);
+		this.events.on("reaction_removed", (data, evt) => {
+			if (evt.api_app_id !== this.opts.events!.appId) {
+				return;
+			}
+			const reaction = new Reaction(this, data, evt.team_id);
 			this.emit("reactionRemoved", reaction);
+		});
+
+		this.events.on("error", (error) => {
+			console.log("+++++++++++*");
+			console.log(error);
 		});
 	}
 
@@ -265,7 +336,9 @@ export class Client extends EventEmitter {
 			} else {
 				const newUser = new User(this, data);
 				team.users.set(newUser.id, newUser);
-				this.rtm(team.id).subscribePresence([newUser.id]);
+				if (this.rtmMap.has(team.id)) {
+					this.rtm(team.id).subscribePresence([newUser.id]);
+				}
 				if (!this.startup.has(team.id)) {
 					this.emit("addUser", newUser);
 				}
@@ -350,6 +423,16 @@ export class Client extends EventEmitter {
 		return this.teams.get(teamId) || null;
 	}
 
+	public getOauthUrl(redirectUrl: string): string {
+		if (!this.opts.events) {
+			return "";
+		}
+		const cid = encodeURIComponent(this.opts.events.clientId);
+		const url = encodeURIComponent(redirectUrl);
+		const scope: string[] = [];
+		return `https://slack.com/oath/v2/authorize?scope=${scope.join(",")}&client_id=${cid}&redirect_uri=${url}`;
+	}
+
 	private handleMessageEvent(data) {
 		if (["channel_join", "channel_name", "message_replied"].includes(data.subtype)) {
 			return;
@@ -377,5 +460,24 @@ export class Client extends EventEmitter {
 			const message = new Message(this, data, teamId, channelId, userId);
 			this.emit("message", message);
 		}
+	}
+
+	private getHtmlResponse(title: string, content: string): string {
+		return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Slack OAuth token</title>
+	<style>
+		body {
+			margin-top: 16px;
+			text-align: center;
+		}
+	</style>
+</head>
+<body>
+	<h4>${title}</h4>
+	<h2>${content}</h2>
+</body>
+</html>`;
 	}
 }
