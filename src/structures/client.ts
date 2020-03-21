@@ -7,8 +7,11 @@ import { IChannelData, Channel } from "./channel";
 import { ITeamData, Team } from "./team";
 import { Message } from "./message";
 import { Reaction } from "./reaction";
+import { Logger } from "../logger";
 import * as ua from "useragent-generator";
 import * as express from "express";
+
+const log = new Logger("Client");
 
 export interface IClientOpts {
 	token?: string;
@@ -55,6 +58,7 @@ export class Client extends EventEmitter {
 	}
 
 	public async disconnect() {
+		log.info("Disconnecting...");
 		for (const [, rtm ] of this.rtmMap) {
 			await rtm.disconnect();
 		}
@@ -64,15 +68,18 @@ export class Client extends EventEmitter {
 	}
 
 	public async connect() {
+		log.info("Connecting...");
 		if (this.opts.token) {
 			await this.addToken(this.opts.token);
 		}
 		if (this.opts.events) {
 			await this.connectToEventsApi();
 		}
+		this.emit("connected");
 	}
 
 	public async addToken(token: string, teamId: string = "", userId: string = "") {
+		log.info(`Adding token for team=${teamId} and user=${userId}...`);
 		const useragent = ua.chrome("79.0.3945.117");
 		// tslint:disable-next-line no-any
 		const webHeaders: any = this.opts.cookie ? { headers: {
@@ -112,6 +119,7 @@ export class Client extends EventEmitter {
 			}
 			return;
 		}
+		log.verbose("connecting to RTM...");
 		// tslint:disable-next-line no-any
 		const rtmHeaders: any = this.opts.cookie ? { tls: { headers: {
 			"Cookie": `d=${this.opts.cookie}`,
@@ -120,18 +128,22 @@ export class Client extends EventEmitter {
 		const rtm = new RTMClient(token, rtmHeaders);
 		return new Promise(async (resolve, reject) => {
 			rtm.once("unable_to_rtm_start", (err) => {
+				log.debug("RTM event: unable_to_rtm_start");
 				if (err.data && err.data.error === "not_allowed_token_type" && this.opts.events) {
 					resolve();
 				} else {
+					log.error("Failed to start rtm client", err);
 					reject(err);
 				}
 			});
 
 			rtm.on("disconnected", () => {
+				log.debug("RTM event: disconnected");
 				this.emit("disconnected");
 			});
 
 			rtm.on("authenticated", async (data) => {
+				log.debug("RTM event: authenticated");
 				teamId = data.team.id as string;
 				this.startup.add(teamId);
 				this.rtmMap.set(teamId, rtm);
@@ -155,12 +167,13 @@ export class Client extends EventEmitter {
 			});
 
 			rtm.on("ready", () => {
+				log.debug("RTM event: ready");
 				resolve();
-				this.emit("connected");
 			});
 
 			for (const ev of ["bot_added", "bot_changed"]) {
 				rtm.on(ev, (data) => {
+					log.debug("RTM event: bot_added/changed");
 					data.bot.team_id = teamId;
 					this.addUser(data.bot);
 				});
@@ -168,6 +181,7 @@ export class Client extends EventEmitter {
 
 			for (const ev of ["team_profile_change", "team_pref_change"]) {
 				rtm.on(ev, async () => {
+					log.debug("RTM event: team_profile/pref_change");
 					const ret = await this.web(teamId).team.info({
 						team: teamId,
 					});
@@ -179,6 +193,7 @@ export class Client extends EventEmitter {
 			}
 
 			rtm.on("user_typing", (data) => {
+				log.debug("RTM event: user_typing");
 				const channel = this.getChannel(data.channel, teamId);
 				const user = this.getUser(data.user || data.bot_id, teamId);
 				if (channel && user) {
@@ -187,6 +202,7 @@ export class Client extends EventEmitter {
 			});
 
 			rtm.on("presence_change", (data) => {
+				log.debug("RTM event: presence_change");
 				const user = this.getUser(data.user || data.bot_id, teamId);
 				if (user) {
 					this.emit("presenceChange", user, data.presence);
@@ -196,6 +212,7 @@ export class Client extends EventEmitter {
 			if (!this.opts.events) {
 				for (const ev of ["im_created", "channel_created", "channel_rename", "group_rename"]) {
 					rtm.on(ev, (data) => {
+						log.debug("RTM event: im/channel/group_created/rename");
 						data.channel.team_id = teamId;
 						this.addChannel(data.channel);
 					});
@@ -203,27 +220,32 @@ export class Client extends EventEmitter {
 
 				for (const ev of ["team_join", "user_change"]) {
 					rtm.on(ev, (data) => {
+						log.debug("RTM event: team_join/user_change");
 						data.user.team_id = teamId;
 						this.addUser(data.user);
 					});
 				}
 
 				rtm.on("message", (data) => {
+					log.debug("RTM event: message");
 					data.team_id = teamId;
 					this.handleMessageEvent(data);
 				});
 
 				rtm.on("reaction_added", (data) => {
+					log.debug("RTM event: reaction_added");
 					const reaction = new Reaction(this, data, teamId);
 					this.emit("reactionAdded", reaction);
 				});
 
 				rtm.on("reaction_removed", (data) => {
+					log.debug("RTM event: reaction_removed");
 					const reaction = new Reaction(this, data, teamId);
 					this.emit("reactionRemoved", reaction);
 				});
 
 				rtm.on("team_rename", (data) => {
+					log.debug("RTM event: team_rename");
 					this.addTeam({
 						id: teamId,
 						name: data.name,
@@ -231,6 +253,7 @@ export class Client extends EventEmitter {
 				});
 
 				rtm.on("member_joined_channel", (data) => {
+					log.debug("RTM event: member_joined_channel");
 					const userObj = this.getUser(data.user, teamId);
 					const chanObj = this.getChannel(data.channel, teamId);
 					if (userObj && chanObj) {
@@ -240,6 +263,7 @@ export class Client extends EventEmitter {
 				});
 
 				rtm.on("member_left_channel", (data) => {
+					log.debug("RTM event: member_left_channel");
 					const userObj = this.getUser(data.user, teamId);
 					const chanObj = this.getChannel(data.channel, teamId);
 					if (userObj && chanObj) {
@@ -252,6 +276,7 @@ export class Client extends EventEmitter {
 			try {
 				await rtm.start();
 			} catch (err) {
+				log.error("Failed to start rtm client", err);
 				reject(err);
 			}
 		});
@@ -261,6 +286,7 @@ export class Client extends EventEmitter {
 		if (!this.opts.events) {
 			return;
 		}
+		log.info("Connecting to events api...");
 		this.events = new SlackEventAdapter(this.opts.events.signingSecret, {
 			includeBody: true,
 		});
@@ -268,19 +294,23 @@ export class Client extends EventEmitter {
 
 		this.opts.events.express.app.get(this.opts.events.express.path + "/oauth/" + encodeURIComponent(this.opts.events.appId),
 			async (req: express.Request, res: express.Response) => {
+			log.debug("New oauth request");
 			const data = await (new WebClient()).oauth.v2.access({
 				client_id: this.opts.events!.clientId,
 				client_secret: this.opts.events!.clientSecret,
 				code: req.query.code,
 			});
 			if (data.app_id !== this.opts.events!.appId) {
+				log.silly("Not for our app, ignoring...");
 				return;
 			}
 			const STATUS_FORBIDDEN = 403;
 			if (!data || !data.ok) {
+				log.debug("Failed to get oauth token", data);
 				res.status(STATUS_FORBIDDEN).send(this.getHtmlResponse("Failed to get OAuth token", encodeURIComponent(data.error as string)));
 				return;
 			}
+			log.debug("Successfully verified oauth");
 			const teamId = (data.team as any).id;
 			await this.addToken((data as any).access_token, teamId, (data as any).bot_user_id);
 			
@@ -297,6 +327,7 @@ export class Client extends EventEmitter {
 			if (data.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
+			log.debug("Events event: app_uninstalled");
 			const teamId = data.team_id;
 			const rtm = this.rtmMap.get(teamId);
 			if (rtm) {
@@ -318,6 +349,7 @@ export class Client extends EventEmitter {
 				if (evt.api_app_id !== this.opts.events!.appId) {
 					return;
 				}
+				log.debug("Events event: im/channel/group_created/rename");
 				data.channel.team_id = evt.team_id;
 				this.addChannel(data.channel);
 			});
@@ -328,6 +360,7 @@ export class Client extends EventEmitter {
 				if (evt.api_app_id !== this.opts.events!.appId) {
 					return;
 				}
+				log.debug("Events event: team_join/user_change");
 				data.user.team_id = evt.team_id;
 				this.addUser(data.user);
 			});
@@ -337,6 +370,7 @@ export class Client extends EventEmitter {
 			if (evt.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
+			log.debug("Events event: message");
 			data.team_id = evt.team_id;
 			this.handleMessageEvent(data);
 		});
@@ -345,6 +379,7 @@ export class Client extends EventEmitter {
 			if (evt.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
+			log.debug("Events event: reaction_added");
 			const reaction = new Reaction(this, data, evt.team_id);
 			this.emit("reactionAdded", reaction);
 		});
@@ -353,6 +388,7 @@ export class Client extends EventEmitter {
 			if (evt.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
+			log.debug("Events event: reaction_removed");
 			const reaction = new Reaction(this, data, evt.team_id);
 			this.emit("reactionRemoved", reaction);
 		});
@@ -361,6 +397,7 @@ export class Client extends EventEmitter {
 			if (evt.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
+			log.debug("Events event: team_rename");
 			this.addTeam({
 				id: evt.team_id,
 				name: data.name,
@@ -371,6 +408,7 @@ export class Client extends EventEmitter {
 			if (evt.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
+			log.debug("Events event: member_joined_channel");
 			const userObj = this.getUser(data.user, evt.team_id);
 			const chanObj = this.getChannel(data.channel, evt.team_id);
 			if (userObj && chanObj) {
@@ -383,6 +421,7 @@ export class Client extends EventEmitter {
 			if (evt.api_app_id !== this.opts.events!.appId) {
 				return;
 			}
+			log.debug("Events event: member_left_channel");
 			const userObj = this.getUser(data.user, evt.team_id);
 			const chanObj = this.getChannel(data.channel, evt.team_id);
 			if (userObj && chanObj) {
@@ -392,8 +431,7 @@ export class Client extends EventEmitter {
 		});
 
 		this.events.on("error", (error) => {
-			console.log("+++++++++++*");
-			console.log(error);
+			log.warn("Events API error", error);
 		});
 	}
 
