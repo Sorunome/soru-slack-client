@@ -42,12 +42,14 @@ export interface IClientOpts {
 	};
 }
 
+const RECONNECT_PAUSE = 15000;
+
 export class Client extends EventEmitter {
 	private webMap: Map<string, WebClient> = new Map();
 	private rtmMap: Map<string, RTMClient> = new Map();
-	private tokenMap: Map<string, string> = new Map();
 	private events: SlackEventAdapter | null = null;
 	private startup: Set<string> = new Set();
+	public tokens: Map<string, string> = new Map();
 	public teams: Map<string, Team> = new Map();
 	public users: Map<string, User> = new Map();
 	constructor(private opts: IClientOpts) {
@@ -103,6 +105,7 @@ export class Client extends EventEmitter {
 		if (teamId) {
 			this.startup.add(teamId);
 			this.webMap.set(teamId, web);
+			this.tokens.set(teamId, token);
 			this.addTeam({
 				id: teamId,
 				name: teamId,
@@ -139,6 +142,19 @@ export class Client extends EventEmitter {
 			"User-Agent": useragent,
 		}}} : {};
 		const rtm = new RTMClient(token, rtmHeaders);
+		const reconnect = async () => {
+			await rtm.disconnect();
+			log.info("RTM client got disconnected, reconnecting...");
+			setTimeout(async () => {
+				try {
+					await rtm.start();
+					log.info("Reconnected!");
+				} catch (err) {
+					log.error("Failed to re-start RTM client", err);
+					this.emit("disconnected");
+				}
+			}, RECONNECT_PAUSE);
+		};
 		return new Promise(async (resolve, reject) => {
 			rtm.once("unable_to_rtm_start", (err) => {
 				log.debug("RTM event: unable_to_rtm_start");
@@ -150,9 +166,14 @@ export class Client extends EventEmitter {
 				}
 			});
 
-			rtm.on("disconnected", () => {
+			rtm.on("goodbye", async () => {
+				log.debug("RTM event: goodbye");
+				await reconnect();
+			});
+
+			rtm.on("disconnected", async () => {
 				log.debug("RTM event: disconnected");
-				this.emit("disconnected");
+				await reconnect();
 			});
 
 			rtm.on("authenticated", async (data) => {
@@ -161,7 +182,7 @@ export class Client extends EventEmitter {
 				this.startup.add(teamId);
 				this.rtmMap.set(teamId, rtm);
 				this.webMap.set(teamId, web);
-				this.tokenMap.set(token, teamId);
+				this.tokens.set(teamId, token);
 				this.addTeam(data.team);
 				this.addUser({
 					id: data.self.id as string,
@@ -288,6 +309,7 @@ export class Client extends EventEmitter {
 
 			try {
 				await rtm.start();
+				log.info("RTM connected");
 			} catch (err) {
 				log.error("Failed to start rtm client", err);
 				reject(err);
@@ -348,11 +370,7 @@ export class Client extends EventEmitter {
 			}
 			this.webMap.delete(teamId);
 			this.rtmMap.delete(teamId);
-			for (const [token, tid] of this.tokenMap) {
-				if (tid === teamId) {
-					this.tokenMap.delete(token);
-				}
-			}
+			this.tokens.delete(teamId);
 			this.teams.delete(teamId);
 			this.users.delete(teamId);
 		});
