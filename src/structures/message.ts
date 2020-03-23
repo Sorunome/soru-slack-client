@@ -14,6 +14,7 @@ limitations under the License.
 import { Client } from "./client";
 import { Channel } from "./channel";
 import { User } from "./user";
+import { Bot } from "./bot";
 import { Base } from "./base";
 
 export interface IMessageData {
@@ -35,7 +36,7 @@ export interface IMessageData {
 
 export class Message extends Base {
 	public channel: Channel;
-	public user: User;
+	public author: User | Bot;
 	public ts: string;
 	public text: string | null = null;
 	public blocks: any[] | null = null; // tslint:disable-line no-any
@@ -57,12 +58,12 @@ export class Message extends Base {
 			userId = (data.user || data.bot_id) as string;
 		}
 		const channel = this.client.getChannel(channelId, teamId);
-		const user = this.client.getUser(userId, teamId);
+		const user = this.client.getUserOrBot(userId, teamId);
 		if (!channel || !user) {
 			throw new Error("User or channel not found");
 		}
 		this.channel = channel;
-		this.user = user;
+		this.author = user;
 		this._patch(data);
 	}
 

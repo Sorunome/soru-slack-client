@@ -16,6 +16,7 @@ import { WebClient, WebAPICallResult } from "@slack/web-api";
 import { SlackEventAdapter } from "@slack/events-api/dist/adapter";
 import { EventEmitter } from "events";
 import { IUserData, User } from "./user";
+import { IBotData, Bot } from "./bot";
 import { IChannelData, Channel } from "./channel";
 import { ITeamData, Team } from "./team";
 import { Message } from "./message";
@@ -48,6 +49,7 @@ export interface IClientOpts {
 		storeToken: (t: IStoreToken) => Promise<void>,
 		getTokens: () => Promise<IStoreToken[]>,
 	};
+	separator?: string;
 }
 
 const RECONNECT_PAUSE = 15000;
@@ -56,12 +58,14 @@ export class Client extends EventEmitter {
 	public tokens: Map<string, string> = new Map();
 	public teams: Map<string, Team> = new Map();
 	public users: Map<string, User> = new Map();
+	public separator: string;
 	private webMap: Map<string, WebClient> = new Map();
 	private rtmMap: Map<string, RTMClient> = new Map();
 	private events: SlackEventAdapter | null = null;
 	private startup: Set<string> = new Set();
 	constructor(private opts: IClientOpts) {
 		super();
+		this.separator = opts.separator || "-";
 	}
 
 	public web(teamId: string): WebClient {
@@ -239,7 +243,7 @@ export class Client extends EventEmitter {
 				rtm.on(ev, (data) => {
 					log.debug("RTM event: bot_added/changed");
 					data.bot.team_id = teamId;
-					this.addUser(data.bot);
+					this.addBot(data.bot);
 				});
 			}
 
@@ -506,13 +510,12 @@ export class Client extends EventEmitter {
 
 	public addUser(data: IUserData, createTeam = true) {
 		const team = this.teams.get(data.team_id);
-		const userId = (data.id || data.bot_id) as string;
 		if (team) {
-			const user = team.users.get(userId);
+			const user = team.users.get(data.id);
 			if (user) {
 				const oldUser = user._clone();
 				user._patch(data);
-				if (!this.startup.has(team.id) && !user.fullBot) {
+				if (!this.startup.has(team.id)) {
 					this.emit("changeUser", oldUser, user);
 				}
 			} else {
@@ -522,7 +525,7 @@ export class Client extends EventEmitter {
 					// tslint:disable-next-line no-floating-promises
 					this.rtm(team.id).subscribePresence([newUser.id]);
 				}
-				if (!this.startup.has(team.id) && !newUser.fullBot) {
+				if (!this.startup.has(team.id)) {
 					this.emit("addUser", newUser);
 				}
 			}
@@ -537,12 +540,65 @@ export class Client extends EventEmitter {
 		}
 	}
 
-	public getUser(userId: string, teamId: string): User | null {
+	public getUser(userId: string, teamId?: string): User | null {
+		if (!teamId) {
+			[teamId, userId] = userId.split(this.separator);
+		}
 		const team = this.teams.get(teamId);
 		if (!team) {
 			return null;
 		}
 		return team.users.get(userId) || null;
+	}
+
+	public addBot(data: IBotData, createTeam = true) {
+		const team = this.teams.get(data.team_id);
+		if (team) {
+			const bot = team.bots.get(data.bot_id);
+			if (bot) {
+				const oldBot = bot._clone();
+				bot._patch(data);
+				if (!this.startup.has(team.id)) {
+					this.emit("changeBot", oldBot, bot);
+				}
+			} else {
+				const newBot = new Bot(this, data);
+				team.bots.set(newBot.id, newBot);
+				if (!this.startup.has(team.id)) {
+					this.emit("addBot", newBot);
+				}
+			}
+		} else if (createTeam) {
+			// tslint:disable-next-line no-any no-floating-promises
+			this.web(data.team_id).team.info({ team: data.team_id }).then((teamData: any) => {
+				if (teamData.team) {
+					this.addTeam(teamData.team);
+					this.addBot(data, false);
+				}
+			});
+		}
+	}
+
+	public getBot(botId: string, teamId?: string): Bot | null {
+		if (!teamId) {
+			[teamId, botId] = botId.split(this.separator);
+		}
+		const team = this.teams.get(teamId);
+		if (!team) {
+			return null;
+		}
+		return team.bots.get(botId) || null;
+	}
+
+	public getUserOrBot(id: string, teamId?: string): User | Bot | null {
+		if (!teamId) {
+			[teamId, id] = id.split(this.separator);
+		}
+		const team = this.teams.get(teamId);
+		if (!team) {
+			return null;
+		}
+		return team.users.get(id) || team.bots.get(id) || null;
 	}
 
 	public addChannel(data: IChannelData, createTeam = true) {
@@ -580,7 +636,10 @@ export class Client extends EventEmitter {
 		}
 	}
 
-	public getChannel(channelId: string, teamId: string): Channel | null {
+	public getChannel(channelId: string, teamId?: string): Channel | null {
+		if (!teamId) {
+			[teamId, channelId] = channelId.split(this.separator);
+		}
 		const team = this.teams.get(teamId);
 		if (!team) {
 			return null;
@@ -625,7 +684,7 @@ export class Client extends EventEmitter {
 		}
 		if (data.bot_id) {
 			// okay, we need to create the bot
-			this.addUser(data);
+			this.addBot(data);
 		}
 		const teamId = data.team_id;
 		let userId = data.user || data.bot_id;

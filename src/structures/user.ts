@@ -16,11 +16,9 @@ import { Base, IconBase, IIconData } from "./base";
 import { Team } from "./team";
 
 export interface IUserData {
-	id?: string;
-	bot_id?: string;
+	id: string;
 	team_id: string;
 	name?: string;
-	username?: string;
 	color?: string;
 	real_name?: string;
 	profile?: IIconData | {
@@ -44,7 +42,6 @@ export class User extends IconBase {
 	public statusEmoji: string | null = null;
 	public partial = true;
 	public bot: boolean = false;
-	public fullBot: boolean = false;
 	constructor(client: Client, data: IUserData) {
 		super(client);
 		const team = this.client.teams.get(data.team_id);
@@ -53,15 +50,19 @@ export class User extends IconBase {
 		}
 		this.team = team;
 		this._patch(data);
-		this.partial = !(data.profile || data.icons || this.fullBot);
+		this.partial = !(data.profile || data.icons);
+	}
+
+	public get fullId(): string {
+		return `${this.team.id}${this.client.separator}${this.id}`;
 	}
 
 	public _patch(data: IUserData) {
-		if (data.hasOwnProperty("id") || data.hasOwnProperty("bot_id")) {
-			this.id = (data.id || data.bot_id) as string;
+		if (data.hasOwnProperty("id")) {
+			this.id = data.id;
 		}
-		if (data.hasOwnProperty("name") || data.hasOwnProperty("username")) {
-			this.name = (data.name || data.username) as string;
+		if (data.hasOwnProperty("name")) {
+			this.name = (data.name) as string;
 		}
 		if (data.hasOwnProperty("color")) {
 			this.color = data.color!;
@@ -83,10 +84,6 @@ export class User extends IconBase {
 		}
 		if (data.profile && data.profile.status_emoji) {
 			this.statusEmoji = data.profile.status_emoji as string;
-		}
-		if (!this.fullBot && data.bot_id) {
-			this.bot = true;
-			this.fullBot = true;
 		}
 	}
 

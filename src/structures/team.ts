@@ -15,6 +15,7 @@ import { Client } from "./client";
 import { IconBase, IIconData } from "./base";
 import { IChannelData, Channel } from "./channel";
 import { IUserData, User } from "./user";
+import { Bot } from "./bot";
 
 export interface ITeamData {
 	id: string;
@@ -26,6 +27,7 @@ export interface ITeamData {
 export class Team extends IconBase {
 	public channels: Map<string, Channel> = new Map();
 	public users: Map<string, User> = new Map();
+	public bots: Map<string, Bot> = new Map();
 	public id: string;
 	public name: string;
 	public domain: string;

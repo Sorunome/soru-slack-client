@@ -71,6 +71,10 @@ export class Channel extends Base {
 		this._patch(data);
 	}
 
+	public get fullId(): string {
+		return `${this.team.id}${this.client.separator}${this.id}`;
+	}
+
 	public _patch(data: IChannelData) {
 		this.id = data.id;
 		this.name = data.name || null;
