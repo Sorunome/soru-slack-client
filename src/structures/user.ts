@@ -14,6 +14,7 @@ limitations under the License.
 import { Client } from "./client";
 import { Base, IconBase, IIconData } from "./base";
 import { Team } from "./team";
+import { Channel, IChannelData } from "./channel";
 
 export interface IUserData {
 	id: string;
@@ -32,6 +33,7 @@ export interface IUserData {
 }
 
 export class User extends IconBase {
+	private dmChannel: Channel | null = null;
 	public team: Team;
 	public id: string;
 	public name: string;
@@ -55,6 +57,33 @@ export class User extends IconBase {
 
 	public get fullId(): string {
 		return `${this.team.id}${this.client.separator}${this.id}`;
+	}
+
+	public async dm(): Promise<Channel | null> {
+		if (this.dmChannel) {
+			return this.dmChannel;
+		}
+		const reply = await this.client.web(this.team.id).conversations.open({
+			return_im: true,
+			users: this.id,
+		});
+		if (!reply || !reply.ok || !reply.channel) {
+			return null;
+		}
+		const chanData = reply.channel as IChannelData;
+		chanData.team_id = this.team.id;
+		let chan = this.client.getChannel(chanData.id, this.team.id);
+		if (chan) {
+			this.dmChannel = chan;
+			return chan;
+		}
+		this.client.addChannel(chanData);
+		chan = this.client.getChannel(chanData.id, this.team.id);
+		if (chan) {
+			this.dmChannel = chan;
+			return chan;
+		}
+		return null;
 	}
 
 	public _patch(data: IUserData) {

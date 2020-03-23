@@ -22,6 +22,8 @@ import { ITeamData, Team } from "./team";
 import { Message } from "./message";
 import { Reaction } from "./reaction";
 import { Logger } from "../logger";
+import { Util } from "../util";
+import { Buffer } from "buffer";
 import * as ua from "useragent-generator";
 import * as express from "express";
 
@@ -676,6 +678,23 @@ export class Client extends EventEmitter {
 		const url = encodeURIComponent(redirectUrl);
 		const scope: string[] = [];
 		return `https://slack.com/oath/v2/authorize?scope=${scope.join(",")}&client_id=${cid}&redirect_uri=${url}`;
+	}
+
+	public async downloadFile(url: string): Promise<Buffer> {
+		let token: string | undefined;
+		for (const [, user] of this.users) {
+			if (url.includes(user.team.domain)) {
+				token = this.tokens.get(user.team.id);
+				break;
+			}
+		}
+		if (!token) {
+			return await Util.DownloadFile(url);
+		} else {
+			return await Util.DownloadFile(url, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+		}
 	}
 
 	private handleMessageEvent(data) {

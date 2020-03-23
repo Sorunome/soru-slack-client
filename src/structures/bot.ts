@@ -29,6 +29,10 @@ export class Bot extends IconBase {
 		this.partial = !(data.icons && this.user);
 	}
 
+	public get fullId(): string {
+		return `${this.team.id}${this.client.separator}${this.id}`;
+	}
+
 	public get displayName(): string {
 		return this.name;
 	}

@@ -15,6 +15,7 @@ import { Client } from "./client";
 import { Base, IIconData, ICreatorValue } from "./base";
 import { Team } from "./team";
 import { User } from "./user";
+import { Util } from "../util";
 
 type ChannelTypes = "channel" | "group" | "mpim" | "im" | "unknown";
 
@@ -44,6 +45,7 @@ export interface ISendOpts {
 	username?: string;
 	iconUrl?: string;
 	iconEmoji?: string;
+	threadTs?: string;
 	asUser?: boolean;
 }
 
@@ -169,17 +171,6 @@ export class Channel extends Base {
 		await this.client.web(this.team.id).chat.delete(send);
 	}
 
-	public async replyMessage(sendable: SendableType, ts: string, opts?: ISendOpts): Promise<string> {
-		const send: any = { // tslint:disable-line no-any
-			...this.resolveSendable(sendable),
-			channel: this.id,
-			thread_ts: ts,
-		};
-		this.applyOpts(send, opts);
-		const ret = await this.client.web(this.team.id).chat.postMessage(send);
-		return ret.ts as string;
-	}
-
 	public async editMessage(sendable: SendableType, ts: string): Promise<string> {
 		const ret = await this.client.web(this.team.id).chat.update({
 			...this.resolveSendable(sendable),
@@ -188,6 +179,34 @@ export class Channel extends Base {
 			ts,
 		});
 		return ret.ts as string;
+	}
+
+	public async sendFile(urlOrBuffer: string | Buffer, title: string, filename?: string): Promise<string> {
+		if (!filename) {
+			filename = title;
+		}
+		let buffer: Buffer;
+		if (typeof urlOrBuffer === "string") {
+			buffer = await Util.DownloadFile(urlOrBuffer);
+		} else {
+			buffer = urlOrBuffer;
+		}
+		const ret = await this.client.web(this.team.id).files.upload({
+			filename,
+			file: buffer,
+			title,
+			filetype: "auto",
+			channels: this.id,
+		});
+		return ret.ts as string;
+	}
+
+	public async sendReaction(ts: string, reaction: string) {
+		await this.client.web(this.team.id).reactions.add({
+			channel: this.id,
+			timestamp: ts,
+			name: reaction,
+		});
 	}
 
 	private resolveSendable(sendable: SendableType): ISendMessage {
@@ -209,6 +228,9 @@ export class Channel extends Base {
 			}
 			if (opts.asUser) {
 				send.as_user = true;
+			}
+			if (opts.threadTs) {
+				send.thread_ts = opts.threadTs;
 			}
 		}
 	}
