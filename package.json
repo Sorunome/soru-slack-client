@@ -1,6 +1,6 @@
 {
   "name": "soru-slack-client",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A slack client",
   "repository": {
     "type": "git",
@@ -49,6 +49,6 @@
   },
   "files": [
     "src/*",
-    "lib/src/*"
+    "lib/*"
   ]
 }
