@@ -33,7 +33,6 @@ export interface IUserData {
 }
 
 export class User extends IconBase {
-	private dmChannel: Channel | null = null;
 	public team: Team;
 	public id: string;
 	public name: string;
@@ -44,6 +43,7 @@ export class User extends IconBase {
 	public statusEmoji: string | null = null;
 	public partial = true;
 	public bot: boolean = false;
+	private imChannel: Channel | null = null;
 	constructor(client: Client, data: IUserData) {
 		super(client);
 		const team = this.client.teams.get(data.team_id);
@@ -59,9 +59,9 @@ export class User extends IconBase {
 		return `${this.team.id}${this.client.separator}${this.id}`;
 	}
 
-	public async dm(): Promise<Channel | null> {
-		if (this.dmChannel) {
-			return this.dmChannel;
+	public async im(): Promise<Channel | null> {
+		if (this.imChannel) {
+			return this.imChannel;
 		}
 		const reply = await this.client.web(this.team.id).conversations.open({
 			return_im: true,
@@ -74,13 +74,13 @@ export class User extends IconBase {
 		chanData.team_id = this.team.id;
 		let chan = this.client.getChannel(chanData.id, this.team.id);
 		if (chan) {
-			this.dmChannel = chan;
+			this.imChannel = chan;
 			return chan;
 		}
 		this.client.addChannel(chanData);
 		chan = this.client.getChannel(chanData.id, this.team.id);
 		if (chan) {
-			this.dmChannel = chan;
+			this.imChannel = chan;
 			return chan;
 		}
 		return null;

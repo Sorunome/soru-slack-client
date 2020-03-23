@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+export * from "./structures/bot";
 export * from "./structures/channel";
 export * from "./structures/client";
 export * from "./structures/message";

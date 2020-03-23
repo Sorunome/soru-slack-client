@@ -683,7 +683,7 @@ export class Client extends EventEmitter {
 	public async downloadFile(url: string): Promise<Buffer> {
 		let token: string | undefined;
 		for (const [, user] of this.users) {
-			if (url.includes(user.team.domain)) {
+			if (url.includes(user.team.domain) || url.includes(user.team.id)) {
 				token = this.tokens.get(user.team.id);
 				break;
 			}

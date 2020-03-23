@@ -17,6 +17,7 @@ export class Bot extends IconBase {
 	public user: User | null = null;
 	public id: string;
 	public name: string;
+	public displayName: string;
 	public partial: boolean = true;
 	constructor(client: Client, data: IBotData) {
 		super(client);
@@ -33,16 +34,18 @@ export class Bot extends IconBase {
 		return `${this.team.id}${this.client.separator}${this.id}`;
 	}
 
-	public get displayName(): string {
-		return this.name;
-	}
-
 	public _patch(data: IBotData) {
 		if (data.hasOwnProperty("bot_id")) {
 			this.id = data.bot_id;
 		}
-		if (data.hasOwnProperty("name") || data.hasOwnProperty("username")) {
-			this.name = (data.name || data.username) as string;
+		if (data.hasOwnProperty("name")) {
+			this.name = data.name!;
+		}
+		if (data.hasOwnProperty("username")) {
+			this.displayName = data.username!;
+		}
+		if (!this.displayName) {
+			this.displayName = this.name;
 		}
 		if (data.hasOwnProperty("user_id")) {
 			const user = this.team.users.get(data.user_id);
@@ -50,9 +53,7 @@ export class Bot extends IconBase {
 				this.user = user;
 			}
 		}
-		if (!this.icon || data.hasOwnProperty("icons")) {
-			this.icon = data.icons || null;
-		}
+		this.icon = data.icons || null;
 	}
 
 	public async load() {
@@ -63,7 +64,16 @@ export class Bot extends IconBase {
 			throw new Error("Bad response");
 		}
 		(ret.bot as IBotData).team_id = this.team.id;
-		this._patch(ret.bot as IBotData);
+		const data = ret.bot as IBotData;
+		if (data.hasOwnProperty("name")) {
+			this.name = data.name!;
+		}
+		if (data.hasOwnProperty("user_id")) {
+			const user = this.team.users.get(data.user_id);
+			if (user) {
+				this.user = user;
+			}
+		}
 		this.partial = false;
 	}
 }

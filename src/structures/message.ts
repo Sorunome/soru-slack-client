@@ -92,6 +92,6 @@ export class Message extends Base {
 	}
 
 	public get empty(): boolean {
-		return !(this.text || (this.attachments && this.attachments.length > 0) || (this.blocks && this.blocks.length > 0));
+		return !(this.text || (this.blocks && this.blocks.length > 0));
 	}
 }
