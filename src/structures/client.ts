@@ -65,6 +65,7 @@ export class Client extends EventEmitter {
 	private rtmMap: Map<string, RTMClient> = new Map();
 	private events: SlackEventAdapter | null = null;
 	private startup: Set<string> = new Set();
+	private shouldDisconnect: boolean = false;
 	constructor(private opts: IClientOpts) {
 		super();
 		this.separator = opts.separator || "-";
@@ -88,16 +89,29 @@ export class Client extends EventEmitter {
 
 	public async disconnect() {
 		log.info("Disconnecting...");
-		for (const [, rtm ] of this.rtmMap) {
-			await rtm.disconnect();
+		this.shouldDisconnect = true;
+		for (const [, rtm] of this.rtmMap) {
+			try {
+				const curState = rtm["stateMachine"].getCurrentState(); // tslint:disable-line no-string-literal
+				if (["connecting", "connected"].includes(curState)) {
+					await rtm.disconnect();
+				}
+			} catch (err) {
+				log.error("Error disconnecting from RTM:", err);
+			}
 		}
 		if (this.events) {
-			await this.events.stop();
+			try {
+				await this.events.stop();
+			} catch (err) {
+				log.error("Failed to disconnect from events API:", err);
+			}
 		}
 	}
 
 	public async connect() {
 		log.info("Connecting...");
+		this.shouldDisconnect = false;
 		if (this.opts.token) {
 			await this.addToken(this.opts.token);
 		}
@@ -164,7 +178,10 @@ export class Client extends EventEmitter {
 		}}} : {};
 		const rtm = new RTMClient(token, rtmHeaders);
 		const reconnect = async () => {
-			await rtm.disconnect();
+			const curState = rtm["stateMachine"].getCurrentState(); // tslint:disable-line no-string-literal
+			if (["connecting", "connected"].includes(curState)) {
+				await rtm.disconnect();
+			}
 			log.info("RTM client got disconnected, reconnecting...");
 			setTimeout(async () => {
 				try {
@@ -197,12 +214,16 @@ export class Client extends EventEmitter {
 
 			rtm.on("goodbye", async () => {
 				log.debug("RTM event: goodbye");
-				await reconnect();
+				if (!this.shouldDisconnect) {
+					await reconnect();
+				}
 			});
 
 			rtm.on("disconnected", async () => {
 				log.debug("RTM event: disconnected");
-				await reconnect();
+				if (!this.shouldDisconnect) {
+					await reconnect();
+				}
 			});
 
 			rtm.on("authenticated", async (data) => {
@@ -239,6 +260,10 @@ export class Client extends EventEmitter {
 			rtm.on("ready", () => {
 				log.debug("RTM event: ready");
 				resolve();
+			});
+
+			rtm.on("error", (error) => {
+				log.warn("RTM API error", error);
 			});
 
 			for (const ev of ["bot_added", "bot_changed"]) {
