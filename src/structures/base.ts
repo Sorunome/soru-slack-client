@@ -24,7 +24,7 @@ export interface ICreatorValue {
 }
 
 export class Base {
-	constructor(protected readonly client: Client) { }
+	constructor(public readonly client: Client) { }
 
 	public _clone() {
 		return Object.assign(Object.create(this), this);

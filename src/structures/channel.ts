@@ -42,11 +42,11 @@ interface ISendMessage {
 type SendableType = ISendMessage | string;
 
 export interface ISendOpts {
-	username?: string;
-	iconUrl?: string;
-	iconEmoji?: string;
-	threadTs?: string;
-	asUser?: boolean;
+	username?: string | null;
+	iconUrl?: string | null;
+	iconEmoji?: string | null;
+	threadTs?: string | null;
+	asUser?: boolean | null;
 }
 
 export class Channel extends Base {
@@ -155,8 +155,13 @@ export class Channel extends Base {
 	}
 
 	public async sendMeMessage(sendable: SendableType): Promise<string> {
+		const send = this.resolveSendable(sendable);
+		if (this.isBotToken()) {
+			send.text = `_${send.text}_`;
+			return await this.sendMessage(send);
+		}
 		const ret = await this.client.web(this.team.id).chat.meMessage({
-			...this.resolveSendable(sendable),
+			...send,
 			channel: this.id,
 		});
 		return ret.ts as string;
@@ -171,13 +176,14 @@ export class Channel extends Base {
 		await this.client.web(this.team.id).chat.delete(send);
 	}
 
-	public async editMessage(sendable: SendableType, ts: string): Promise<string> {
-		const ret = await this.client.web(this.team.id).chat.update({
+	public async editMessage(sendable: SendableType, ts: string, opts?: ISendOpts): Promise<string> {
+		const send: any = { // tslint:disable-line no-any
 			...this.resolveSendable(sendable),
 			channel: this.id,
-			as_user: true,
 			ts,
-		});
+		};
+		this.applyOpts(send, opts);
+		const ret = await this.client.web(this.team.id).chat.update(send);
 		return ret.ts as string;
 	}
 
@@ -210,9 +216,13 @@ export class Channel extends Base {
 	}
 
 	private resolveSendable(sendable: SendableType): ISendMessage {
-		return typeof sendable === "string" ? {
+		const msg: ISendMessage = typeof sendable === "string" ? {
 			text: sendable,
 		} : sendable;
+		if (this.isBotToken() && msg.blocks && msg.blocks[0] && msg.blocks[0].type === "rich_text") {
+			delete msg.blocks;
+		}
+		return msg;
 	}
 
 	private applyOpts(send: any, opts?: ISendOpts) { // tslint:disable-line no-any
@@ -233,5 +243,10 @@ export class Channel extends Base {
 				send.thread_ts = opts.threadTs;
 			}
 		}
+	}
+
+	private isBotToken(): boolean {
+		const token = this.client.tokens.get(this.team.id) || "";
+		return token.startsWith("xoxb");
 	}
 }
