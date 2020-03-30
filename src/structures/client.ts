@@ -321,10 +321,10 @@ export class Client extends EventEmitter {
 					});
 				}
 
-				rtm.on("message", (data) => {
+				rtm.on("message", async (data) => {
 					log.debug("RTM event: message");
 					data.team_id = teamId;
-					this.handleMessageEvent(data);
+					await this.handleMessageEvent(data);
 				});
 
 				rtm.on("reaction_added", (data) => {
@@ -460,13 +460,13 @@ export class Client extends EventEmitter {
 			});
 		}
 
-		this.events.on("message", (data, evt) => {
+		this.events.on("message", async (data, evt) => {
 			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: message");
 			data.team_id = evt.team_id;
-			this.handleMessageEvent(data);
+			await this.handleMessageEvent(data);
 		});
 
 		this.events.on("reaction_added", (data, evt) => {
@@ -722,15 +722,20 @@ export class Client extends EventEmitter {
 		}
 	}
 
-	private handleMessageEvent(data) {
+	private async handleMessageEvent(data) {
 		if (["channel_join", "channel_name", "message_replied"].includes(data.subtype)) {
 			return;
+		}
+		const teamId = data.team_id;
+		const team = this.teams.get(teamId);
+		if (team && team.partial) {
+			await team.load();
 		}
 		if (data.bot_id) {
 			// okay, we need to create the bot
 			this.addBot(data);
 		}
-		const teamId = data.team_id;
+		log.silly("Processing message with data", data);
 		let userId = data.user || data.bot_id;
 		const channelId = data.channel || data.item.channel;
 		for (const tryKey of ["message", "previous_message"]) {
