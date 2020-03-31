@@ -154,6 +154,16 @@ export class Channel extends Base {
 		return ret.ts as string;
 	}
 
+	public async sendCommand(command: string, parameters?: string): Promise<string> {
+		const send: any = { // tslint:disable-line no-any
+			command: command,
+			text: parameters,
+			channel: this.id,
+		};
+		const ret = await this.client.web(this.team.id).apiCall("chat.command", send);
+		return ret.ts as string;
+	}
+
 	public async sendMeMessage(sendable: SendableType): Promise<string> {
 		const send = this.resolveSendable(sendable);
 		if (this.isBotToken()) {
