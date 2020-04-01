@@ -327,15 +327,17 @@ export class Client extends EventEmitter {
 					await this.handleMessageEvent(data);
 				});
 
-				rtm.on("reaction_added", (data) => {
+				rtm.on("reaction_added", async (data) => {
 					log.debug("RTM event: reaction_added");
-					const reaction = new Reaction(this, data, teamId);
+					data.team_id = teamId;
+					const reaction = await Reaction.construct(this, data);
 					this.emit("reactionAdded", reaction);
 				});
 
-				rtm.on("reaction_removed", (data) => {
+				rtm.on("reaction_removed", async (data) => {
 					log.debug("RTM event: reaction_removed");
-					const reaction = new Reaction(this, data, teamId);
+					data.team_id = teamId;
+					const reaction = await Reaction.construct(this, data);
 					this.emit("reactionRemoved", reaction);
 				});
 
@@ -469,21 +471,23 @@ export class Client extends EventEmitter {
 			await this.handleMessageEvent(data);
 		});
 
-		this.events.on("reaction_added", (data, evt) => {
+		this.events.on("reaction_added", async (data, evt) => {
 			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: reaction_added");
-			const reaction = new Reaction(this, data, evt.team_id);
+			data.team_id = evt.team_id;
+			const reaction = await Reaction.construct(this, data);
 			this.emit("reactionAdded", reaction);
 		});
 
-		this.events.on("reaction_removed", (data, evt) => {
+		this.events.on("reaction_removed", async (data, evt) => {
 			if (evt.api_app_id !== appId) {
 				return;
 			}
 			log.debug("Events event: reaction_removed");
-			const reaction = new Reaction(this, data, evt.team_id);
+			data.team_id = evt.team_id;
+			const reaction = await Reaction.construct(this, data);
 			this.emit("reactionRemoved", reaction);
 		});
 
@@ -722,40 +726,91 @@ export class Client extends EventEmitter {
 		}
 	}
 
-	private async handleMessageEvent(data) {
-		if (["channel_join", "channel_name", "message_replied"].includes(data.subtype)) {
-			return;
-		}
+	public async getChannelAndAuthor(data): Promise<{channel: Channel, author: User | Bot}> {
 		const teamId = data.team_id;
 		const team = this.teams.get(teamId);
 		if (team && team.partial) {
 			await team.load();
 		}
-		if (data.bot_id) {
-			// okay, we need to create the bot
-			this.addBot(data);
+		let sourceTeamId = teamId;
+		if (data.source_team && data.source_team !== teamId) {
+			// we have a message from an external team
+			sourceTeamId = data.source_team;
+			let sourceTeam = this.teams.get(sourceTeamId);
+			if (!sourceTeam) {
+				this.startup.add(sourceTeamId);
+				this.addTeam({
+					id: sourceTeamId,
+					fakeId: teamId,
+				});
+				sourceTeam = this.teams.get(sourceTeamId);
+				this.startup.delete(sourceTeamId);
+			}
+			if (!sourceTeam) {
+				throw new Error("Couldn't create source team");
+			}
+			if (sourceTeam.partial) {
+				await sourceTeam.load();
+			}
 		}
-		log.silly("Processing message with data", data);
-		let userId = data.user || data.bot_id;
 		const channelId = data.channel || data.item.channel;
+		const channel = this.getChannel(channelId, teamId);
+		if (!channel) {
+			throw new Error("Channel not found");
+		}
+		let author: User | Bot | null;
+		let userId = data.user;
+		let botId = data.bot_id;
 		for (const tryKey of ["message", "previous_message"]) {
 			if (data[tryKey]) {
 				if (!userId) {
-					userId = data[tryKey].user || data[tryKey].bot_id;
+					userId = data[tryKey].user;
+				}
+				if (!botId) {
+					botId = data[tryKey].bot_id;
 				}
 			}
 		}
+		if (botId) {
+			// okay, we need to create the bot
+			this.addBot({
+				bot_id: botId,
+				team_id: sourceTeamId,
+				user_id: data.user_id,
+			});
+			author = this.getBot(botId, sourceTeamId);
+		} else if (this.getUser(userId, sourceTeamId)) {
+			author = this.getUser(userId, sourceTeamId);
+		} else {
+			this.addUser({
+				id: userId,
+				team_id: sourceTeamId,
+			});
+			author = this.getUser(userId, sourceTeamId);
+		}
+		if (!author) {
+			throw new Error("User or bot not found");
+		}
+		return { channel, author };
+	}
+
+	private async handleMessageEvent(data) {
+		if (["channel_join", "channel_name", "message_replied"].includes(data.subtype)) {
+			return;
+		}
+		log.silly("Processing message with data", data);
+		const { channel, author } = await this.getChannelAndAuthor(data);
 		if (data.subtype === "message_changed") {
 			// we do an edit
-			const oldMessage = new Message(this, data.previous_message, teamId, channelId, userId);
-			const newMessage = new Message(this, data.message, teamId, channelId, userId);
+			const oldMessage = new Message(this, data.previous_message, channel, author);
+			const newMessage = new Message(this, data.message, channel, author);
 			this.emit("messageChanged", oldMessage, newMessage);
 		} else if (data.subtype === "message_deleted") {
 			// we do a message deletion
-			const oldMessage = new Message(this, data.previous_message, teamId, channelId, userId);
+			const oldMessage = new Message(this, data.previous_message, channel, author);
 			this.emit("messageDeleted", oldMessage);
 		} else {
-			const message = new Message(this, data, teamId, channelId, userId);
+			const message = new Message(this, data, channel, author);
 			this.emit("message", message);
 		}
 	}

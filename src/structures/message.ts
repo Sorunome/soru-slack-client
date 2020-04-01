@@ -46,24 +46,10 @@ export class Message extends Base {
 	public files: any[] | null = null; // tslint:disable-line no-any
 	public partial = true;
 
-	constructor(client: Client, data: IMessageData, teamId?: string, channelId?: string, userId?: string) {
+	constructor(client: Client, data: IMessageData, channel: Channel, author: User | Bot) {
 		super(client);
-		if (!teamId) {
-			teamId = data.team_id as string;
-		}
-		if (!channelId) {
-			channelId = (data.channel || (data.item && data.item.channel)) as string;
-		}
-		if (!userId) {
-			userId = (data.user || data.bot_id) as string;
-		}
-		const channel = this.client.getChannel(channelId, teamId);
-		const user = this.client.getUserOrBot(userId, teamId);
-		if (!channel || !user) {
-			throw new Error("User or channel not found");
-		}
 		this.channel = channel;
-		this.author = user;
+		this.author = author;
 		this._patch(data);
 	}
 

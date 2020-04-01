@@ -19,6 +19,7 @@ import { Bot } from "./bot";
 
 export interface ITeamData {
 	id: string;
+	fakeId?: string;
 	name?: string;
 	domain?: string;
 	icon?: IIconData;
@@ -37,6 +38,7 @@ export class Team extends IconBase {
 	public enterpriseId: string | null = null;
 	public enterpriseName: string | null = null;
 	public partial = true;
+	public fakeId: string | null = null;
 	constructor(client: Client, data: ITeamData) {
 		super(client);
 		this._patch(data);
@@ -53,6 +55,15 @@ export class Team extends IconBase {
 		if (data.hasOwnProperty("icon")) {
 			this.icon = data.icon || null;
 		}
+		if (data.hasOwnProperty("fakeId")) {
+			this.fakeId = data.fakeId!;
+		}
+		if (this.client.tokens.has(this.id)) {
+			if (this.fakeId && !this.partial) {
+				this.partial = true;
+			}
+			this.fakeId = null;
+		}
 	}
 
 	public async joinAllChannels() {
@@ -67,13 +78,17 @@ export class Team extends IconBase {
 	public async load() {
 		// first load the team itself
 		{
-			const ret = await this.client.web(this.id).team.info({
+			const ret = await this.client.web(this.fakeId || this.id).team.info({
 				team: this.id,
 			});
 			if (!ret || !ret.ok || !ret.team) {
 				throw new Error("Bad response");
 			}
 			this._patch(ret.team as ITeamData);
+		}
+		if (this.fakeId) {
+			this.partial = false;
+			return;
 		}
 		// next load in the channels
 		{

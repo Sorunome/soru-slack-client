@@ -31,12 +31,19 @@ export interface IReactionData {
 }
 
 export class Reaction extends Base {
+	public static async construct(client: Client, data: IReactionData): Promise<Reaction> {
+		const { channel, author } = await client.getChannelAndAuthor(data);
+		const message = new Message(client, data.item, channel, author);
+		return new Reaction(client, data, message);
+	}
+
 	public ts: string;
 	public reaction: string;
 	public message: Message;
-	constructor(client: Client, data: IReactionData, teamId?: string) {
+
+	constructor(client: Client, data: IReactionData, message: Message) {
 		super(client);
-		this.message = new Message(client, data.item, teamId || data.team_id, data.item.channel, data.user);
+		this.message = message;
 		this._patch(data);
 	}
 

@@ -117,7 +117,7 @@ export class User extends IconBase {
 	}
 
 	public async load() {
-		const ret = await this.client.web(this.team.id).users.info({
+		const ret = await this.client.web(this.team.fakeId || this.team.id).users.info({
 			user: this.id,
 		});
 		if (!ret || !ret.ok || !ret.user) {
