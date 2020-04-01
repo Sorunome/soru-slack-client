@@ -77,27 +77,36 @@ export class Team extends IconBase {
 		}
 		// next load in the channels
 		{
-			const ret = await this.client.web(this.id).conversations.list({
-				types: "public_channel,private_channel,mpim,im",
-				limit: 1000,
-			});
-			if (!ret || !ret.ok || !ret.channels) {
-				throw new Error("Bad response");
-			}
-			for (const channelData of ret.channels as IChannelData[]) {
-				channelData.team_id = this.id;
-				this.client.addChannel(channelData);
-			}
+			let cursor: string | undefined;
+			do {
+				const ret = await this.client.web(this.id).conversations.list({
+					types: "public_channel,private_channel,mpim,im",
+					limit: 1000,
+					cursor,
+				});
+				if (!ret || !ret.ok || !ret.channels) {
+					throw new Error("Bad response");
+				}
+				for (const channelData of ret.channels as IChannelData[]) {
+					channelData.team_id = this.id;
+					this.client.addChannel(channelData);
+				}
+				cursor = ret.response_metadata && ret.response_metadata.next_cursor;
+			} while (cursor);
 		}
 		// next load in the users
 		{
-			const ret = await this.client.web(this.id).users.list();
-			if (!ret || !ret.ok || !ret.members) {
-				throw new Error("Bad response");
-			}
-			for (const userData of ret.members as IUserData[]) {
-				this.client.addUser(userData);
-			}
+			let cursor: string | undefined;
+			do {
+				const ret = await this.client.web(this.id).users.list({ cursor });
+				if (!ret || !ret.ok || !ret.members) {
+					throw new Error("Bad response");
+				}
+				for (const userData of ret.members as IUserData[]) {
+					this.client.addUser(userData);
+				}
+				cursor = ret.response_metadata && ret.response_metadata.next_cursor;
+			} while (cursor);
 		}
 		this.partial = false;
 	}
