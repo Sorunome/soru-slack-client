@@ -773,11 +773,11 @@ export class Client extends EventEmitter {
 		}
 		if (botId) {
 			// okay, we need to create the bot
-			this.addBot({
+			const botData = Object.assign({}, data, {
 				bot_id: botId,
 				team_id: sourceTeamId,
-				user_id: data.user_id,
 			});
+			this.addBot(botData);
 			author = this.getBot(botId, sourceTeamId);
 		} else if (this.getUser(userId, sourceTeamId)) {
 			author = this.getUser(userId, sourceTeamId);

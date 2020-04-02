@@ -10,6 +10,7 @@ export interface IBotData {
 	name?: string;
 	username?: string;
 	icons?: IIconData;
+	bot_profile?: any; // tslint:disable-line no-any
 }
 
 export class Bot extends IconBase {
@@ -38,8 +39,8 @@ export class Bot extends IconBase {
 		if (data.hasOwnProperty("bot_id")) {
 			this.id = data.bot_id;
 		}
-		if (data.hasOwnProperty("name")) {
-			this.name = data.name!;
+		if (data.hasOwnProperty("name") || data.hasOwnProperty("bot_profile")) {
+			this.name = (data.bot_profile && data.bot_profile.name) || data.name!;
 		}
 		if (data.hasOwnProperty("username")) {
 			this.displayName = data.username!;
@@ -53,7 +54,7 @@ export class Bot extends IconBase {
 				this.user = user;
 			}
 		}
-		this.icon = data.icons || null;
+		this.icon = (data.bot_profile && data.bot_profile.icons) || data.icons || null;
 	}
 
 	public async load() {
