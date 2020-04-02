@@ -155,6 +155,9 @@ export class Channel extends Base {
 	}
 
 	public async sendCommand(command: string, parameters?: string): Promise<string> {
+		if (this.isBotToken()) {
+			throw new Error("Not available with bot tokens");
+		}
 		const send: any = { // tslint:disable-line no-any
 			command: command,
 			text: parameters,
