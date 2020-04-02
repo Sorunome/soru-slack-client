@@ -758,7 +758,7 @@ export class Client extends EventEmitter {
 		if (!channel) {
 			throw new Error("Channel not found");
 		}
-		let author: User | Bot | null;
+		let author: User | Bot | null = null;
 		let userId = data.user;
 		let botId = data.bot_id;
 		for (const tryKey of ["message", "previous_message"]) {
@@ -771,7 +771,17 @@ export class Client extends EventEmitter {
 				}
 			}
 		}
-		if (botId) {
+		if (userId) {
+			if (this.getUser(userId, sourceTeamId)) {
+				author = this.getUser(userId, sourceTeamId);
+			} else {
+				this.addUser({
+					id: userId,
+					team_id: sourceTeamId,
+				});
+				author = this.getUser(userId, sourceTeamId);
+			}
+		} else if (botId) {
 			// okay, we need to create the bot
 			const botData = Object.assign({}, data, {
 				bot_id: botId,
@@ -779,14 +789,6 @@ export class Client extends EventEmitter {
 			});
 			this.addBot(botData);
 			author = this.getBot(botId, sourceTeamId);
-		} else if (this.getUser(userId, sourceTeamId)) {
-			author = this.getUser(userId, sourceTeamId);
-		} else {
-			this.addUser({
-				id: userId,
-				team_id: sourceTeamId,
-			});
-			author = this.getUser(userId, sourceTeamId);
 		}
 		if (!author) {
 			throw new Error("User or bot not found");
