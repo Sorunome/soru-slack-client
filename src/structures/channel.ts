@@ -228,6 +228,14 @@ export class Channel extends Base {
 		});
 	}
 
+	public async removeReaction(ts: string, reaction: string) {
+		await this.client.web(this.team.id).reactions.remove({
+			channel: this.id,
+			timestamp: ts,
+			name: reaction,
+		});
+	}
+
 	private resolveSendable(sendable: SendableType): ISendMessage {
 		const msg: ISendMessage = typeof sendable === "string" ? {
 			text: sendable,
