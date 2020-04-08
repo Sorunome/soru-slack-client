@@ -1,6 +1,6 @@
 {
   "name": "soru-slack-client",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "A slack client",
   "repository": {
     "type": "git",
@@ -25,8 +25,7 @@
     "@slack/web-api": "^5.8.0",
     "events": "^3.1.0",
     "express": "^4.17.1",
-    "request": "^2.88.2",
-    "request-promise": "^4.2.5",
+    "got": "^10.7.0",
     "useragent-generator": "^1.1.1-amkt-22079-finish.0"
   },
   "devDependencies": {

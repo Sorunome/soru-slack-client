@@ -1,5 +1,5 @@
 import { Buffer } from "buffer";
-import * as request from "request-promise";
+import got from "got";
 
 export class Util {
 	// tslint:disable-next-line no-any
@@ -8,7 +8,6 @@ export class Util {
 			options.method = "GET";
 		}
 		options.url = url;
-		options.encoding = null;
-		return await request(options);
+		return await got(options).buffer();
 	}
 }

@@ -737,7 +737,17 @@ export class Client extends EventEmitter {
 	public async downloadFile(url: string): Promise<Buffer> {
 		let token: string | undefined;
 		for (const [, user] of this.users) {
-			if (url.includes(user.team.domain) || url.includes(user.team.id)) {
+			let otherDomain = user.team.id;
+			let otherId = user.team.id;
+			if (user.team.fakeId) {
+				otherId = user.team.fakeId;
+				const t = this.teams.get(user.team.fakeId);
+				if (t) {
+					otherDomain = t.domain;
+				}
+			}
+			if (url.includes(user.team.domain) || url.includes(user.team.id)
+				|| url.includes(otherId) || url.includes(otherDomain)) {
 				token = this.tokens.get(user.team.id);
 				break;
 			}
