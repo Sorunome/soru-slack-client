@@ -159,7 +159,7 @@ export class Channel extends Base {
 			throw new Error("Not available with bot tokens");
 		}
 		const send: any = { // tslint:disable-line no-any
-			command: command,
+			command,
 			text: parameters,
 			channel: this.id,
 		};

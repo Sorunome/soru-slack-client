@@ -289,6 +289,7 @@ export class Client extends EventEmitter {
 
 			rtm.on("user_typing", (data) => {
 				log.debug("RTM event: user_typing");
+				log.silly(data);
 				const channel = this.getChannel(data.channel, teamId);
 				const user = this.getUser(data.user || data.bot_id, teamId);
 				if (channel && user) {
@@ -329,6 +330,7 @@ export class Client extends EventEmitter {
 
 				rtm.on("reaction_added", async (data) => {
 					log.debug("RTM event: reaction_added");
+					log.silly(data);
 					data.team_id = teamId;
 					const reaction = await Reaction.construct(this, data);
 					this.emit("reactionAdded", reaction);
@@ -336,6 +338,7 @@ export class Client extends EventEmitter {
 
 				rtm.on("reaction_removed", async (data) => {
 					log.debug("RTM event: reaction_removed");
+					log.silly(data);
 					data.team_id = teamId;
 					const reaction = await Reaction.construct(this, data);
 					this.emit("reactionRemoved", reaction);
@@ -579,7 +582,29 @@ export class Client extends EventEmitter {
 		if (!team) {
 			return null;
 		}
-		return team.users.get(userId) || null;
+		{
+			const u = team.users.get(userId);
+			if (u) {
+				return u;
+			}
+		}
+		// does the user exist on a fake team?
+		for (const [, t] of this.teams) {
+			if (t.fakeId === teamId) {
+				const u = t.users.get(userId);
+				if (u) {
+					return u;
+				}
+			}
+		}
+		// does the user exist on *any* team?
+		for (const [, t] of this.teams) {
+			const u = t.users.get(userId);
+			if (u) {
+				return u;
+			}
+		}
+		return null;
 	}
 
 	public addBot(data: IBotData, createTeam = true) {
