@@ -119,18 +119,24 @@ export class Channel extends Base {
 		}
 		// now load the members
 		{
-			const ret = await this.client.web(this.team.id).conversations.members({
-				channel: this.id,
-			});
-			if (!ret || !ret.ok || !ret.members) {
-				throw new Error("Bad response");
-			}
-			for (const memberId of ret.members as string[]) {
-				const userObj = this.team.users.get(memberId);
-				if (userObj) {
-					this.members.set(userObj.id, userObj);
+			let cursor: string | undefined;
+			do {
+				const ret = await this.client.web(this.team.id).conversations.members({
+					channel: this.id,
+					limit: 1000,
+					cursor,
+				});
+				if (!ret || !ret.ok || !ret.members) {
+					throw new Error("Bad response");
 				}
-			}
+				for (const memberId of ret.members as string[]) {
+					const userObj = this.team.users.get(memberId);
+					if (userObj) {
+						this.members.set(userObj.id, userObj);
+					}
+				}
+				cursor = ret.response_metadata && ret.response_metadata.next_cursor;
+			} while (cursor);
 		}
 		this.partial = false;
 	}

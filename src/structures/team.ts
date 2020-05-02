@@ -113,7 +113,10 @@ export class Team extends IconBase {
 		{
 			let cursor: string | undefined;
 			do {
-				const ret = await this.client.web(this.id).users.list({ cursor });
+				const ret = await this.client.web(this.id).users.list({
+					limit: 1000,
+					cursor,
+				});
 				if (!ret || !ret.ok || !ret.members) {
 					throw new Error("Bad response");
 				}
