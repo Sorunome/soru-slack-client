@@ -59,6 +59,7 @@ export class Channel extends Base {
 	public private: boolean;
 	public team: Team;
 	public partial = true;
+	private joined = false;
 	constructor(client: Client, data: IChannelData) {
 		super(client);
 		const teamId = data.team_id || (data.shared_team_ids && data.shared_team_ids[0]);
@@ -142,15 +143,17 @@ export class Channel extends Base {
 	}
 
 	public async join() {
-		if (["im"].includes(this.type)) {
+		if (["im"].includes(this.type) || this.joined) {
 			return;
 		}
 		await this.client.web(this.team.id).conversations.join({
 			channel: this.id,
 		});
+		this.joined = true;
 	}
 
 	public async sendMessage(sendable: SendableType, opts?: ISendOpts): Promise<string> {
+		await this.join();
 		const send: any = { // tslint:disable-line no-any
 			...this.resolveSendable(sendable),
 			channel: this.id,
@@ -164,6 +167,7 @@ export class Channel extends Base {
 		if (this.isBotToken()) {
 			throw new Error("Not available with bot tokens");
 		}
+		await this.join();
 		const send: any = { // tslint:disable-line no-any
 			command,
 			text: parameters,
@@ -174,6 +178,7 @@ export class Channel extends Base {
 	}
 
 	public async sendMeMessage(sendable: SendableType): Promise<string> {
+		await this.join();
 		const send = this.resolveSendable(sendable);
 		if (this.isBotToken()) {
 			send.text = `_${send.text}_`;
@@ -187,6 +192,7 @@ export class Channel extends Base {
 	}
 
 	public async deleteMessage(ts: string, opts?: ISendOpts) {
+		await this.join();
 		const send: any = { // tslint:disable-line no-any
 			channel: this.id,
 			ts,
@@ -196,6 +202,7 @@ export class Channel extends Base {
 	}
 
 	public async editMessage(sendable: SendableType, ts: string, opts?: ISendOpts): Promise<string> {
+		await this.join();
 		const send: any = { // tslint:disable-line no-any
 			...this.resolveSendable(sendable),
 			channel: this.id,
@@ -207,6 +214,7 @@ export class Channel extends Base {
 	}
 
 	public async sendFile(urlOrBuffer: string | Buffer, title: string, filename?: string): Promise<string> {
+		await this.join();
 		if (!filename) {
 			filename = title;
 		}
@@ -227,6 +235,7 @@ export class Channel extends Base {
 	}
 
 	public async sendReaction(ts: string, reaction: string) {
+		await this.join();
 		await this.client.web(this.team.id).reactions.add({
 			channel: this.id,
 			timestamp: ts,
@@ -235,6 +244,7 @@ export class Channel extends Base {
 	}
 
 	public async removeReaction(ts: string, reaction: string) {
+		await this.join();
 		await this.client.web(this.team.id).reactions.remove({
 			channel: this.id,
 			timestamp: ts,

@@ -678,10 +678,15 @@ export class Client extends EventEmitter {
 				const newChan = new Channel(this, data);
 				team.channels.set(newChan.id, newChan);
 				if (!this.startup.has(team.id)) {
-					// tslint:disable-next-line no-floating-promises
-					newChan.join().catch((err) => {}).then(() => {
+					const token = this.tokens.get(team.id) || "";
+					if (token.startsWith("xoxb")) {
+						// tslint:disable-next-line no-floating-promises
+						newChan.join().catch((err) => {}).then(() => {
+							this.emit("addChannel", newChan);
+						});
+					} else {
 						this.emit("addChannel", newChan);
-					});
+					}
 				}
 			}
 		} else if (createTeam) {
