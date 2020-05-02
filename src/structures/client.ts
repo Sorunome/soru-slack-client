@@ -185,7 +185,10 @@ export class Client extends EventEmitter {
 			log.info("RTM client got disconnected, reconnecting...");
 			setTimeout(async () => {
 				try {
-					await rtm.start();
+					const newCurState = rtm["stateMachine"].getCurrentState(); // tslint:disable-line no-string-literal
+					if (["disconnected"].includes(newCurState)) {
+						await rtm.start();
+					}
 					log.info("Reconnected!");
 				} catch (err) {
 					log.error("Failed to re-start RTM client", err);
