@@ -143,7 +143,7 @@ export class Channel extends Base {
 	}
 
 	public async join() {
-		if (["im", "group"].includes(this.type) || this.joined) {
+		if (["im", "mpim", "group"].includes(this.type) || this.joined) {
 			return;
 		}
 		await this.client.web(this.team.id).conversations.join({
