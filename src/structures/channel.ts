@@ -29,6 +29,7 @@ export interface IChannelData {
 	topic?: ICreatorValue;
 	purpose?: ICreatorValue;
 	private?: boolean;
+	is_private?: boolean;
 	team_id?: string;
 	shared_team_ids?: string[];
 	user?: string;
@@ -98,7 +99,7 @@ export class Channel extends Base {
 		if (data.hasOwnProperty("purpose")) {
 			this.purpose = data.purpose!.value;
 		}
-		this.private = Boolean(data.is_im || data.private);
+		this.private = Boolean(data.is_im || data.private || data.is_private);
 		if (data.hasOwnProperty("user")) {
 			const userObj = this.team.users.get(data.user!);
 			if (userObj) {
@@ -143,7 +144,7 @@ export class Channel extends Base {
 	}
 
 	public async join() {
-		if (["im", "mpim", "group"].includes(this.type) || this.joined) {
+		if (["im", "mpim", "group"].includes(this.type) || this.private || this.joined) {
 			return;
 		}
 		await this.client.web(this.team.id).conversations.join({
