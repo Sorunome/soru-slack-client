@@ -309,7 +309,7 @@ export class Client extends EventEmitter {
 			});
 
 			if (!this.opts.events) {
-				for (const ev of ["im_created", "channel_created", "channel_rename", "group_rename"]) {
+				for (const ev of ["im_created", "channel_created", "channel_rename", "group_joined", "group_rename"]) {
 					rtm.on(ev, (data) => {
 						log.debug("RTM event: im/channel/group_created/rename");
 						data.channel.team_id = teamId;
@@ -840,7 +840,7 @@ export class Client extends EventEmitter {
 	}
 
 	private async handleMessageEvent(data) {
-		if (["channel_join", "channel_name", "message_replied"].includes(data.subtype)) {
+		if (["channel_join", "channel_name", "group_join", "group_name", "message_replied"].includes(data.subtype)) {
 			return;
 		}
 		log.silly("Processing message with data", data);
