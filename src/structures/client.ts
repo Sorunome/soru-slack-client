@@ -349,10 +349,12 @@ export class Client extends EventEmitter {
 
 				rtm.on("team_rename", (data) => {
 					log.debug("RTM event: team_rename");
-					this.addTeam({
-						id: teamId,
-						name: data.name,
-					});
+					if (this.teams.size <= 1) {
+						this.addTeam({
+							id: teamId,
+							name: data.name,
+						});
+					}
 				});
 
 				rtm.on("member_joined_channel", (data) => {
