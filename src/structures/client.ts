@@ -446,7 +446,7 @@ export class Client extends EventEmitter {
 			this.users.delete(teamId);
 		});
 
-		for (const ev of ["im_created", "channel_created", "channel_rename", "group_rename"]) {
+		for (const ev of ["im_created", "channel_created", "channel_rename", "group_joined", "group_rename"]) {
 			this.events.on(ev, (data, evt) => {
 				if (evt.api_app_id !== appId) {
 					return;
