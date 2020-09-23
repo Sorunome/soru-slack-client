@@ -765,8 +765,15 @@ export class Client extends EventEmitter {
 		if (!token) {
 			return await Util.DownloadFile(url);
 		} else {
+			// tslint:disable-next-line no-any
+			const headers: any = {
+				Authorization: `Bearer ${token}`,
+			};
+			if (this.opts.cookie) {
+				headers.Cookie = `d=${encodeURIComponent(decodeURIComponent(this.opts.cookie))}`;
+			}
 			return await Util.DownloadFile(url, {
-				headers: { Authorization: `Bearer ${token}` },
+				headers,
 			});
 		}
 	}
