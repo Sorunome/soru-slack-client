@@ -126,7 +126,7 @@ export class Client extends EventEmitter {
 		const useragent = ua.chrome("79.0.3945.117");
 		// tslint:disable-next-line no-any
 		const webHeaders: any = this.opts.cookie ? { headers: {
-			"Cookie": `d=${this.opts.cookie}`,
+			"Cookie": `d=${encodeURIComponent(decodeURIComponent(this.opts.cookie))}`,
 			"User-Agent": useragent,
 		}} : {};
 		const web = new WebClient(token, webHeaders);
@@ -173,7 +173,7 @@ export class Client extends EventEmitter {
 		log.verbose("connecting to RTM...");
 		// tslint:disable-next-line no-any
 		const rtmHeaders: any = this.opts.cookie ? { tls: { headers: {
-			"Cookie": `d=${this.opts.cookie}`,
+			"Cookie": `d=${encodeURIComponent(decodeURIComponent(this.opts.cookie))}`,
 			"User-Agent": useragent,
 		}}} : {};
 		const rtm = new RTMClient(token, rtmHeaders);
