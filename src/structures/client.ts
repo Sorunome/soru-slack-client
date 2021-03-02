@@ -87,6 +87,37 @@ export class Client extends EventEmitter {
 		return rtm;
 	}
 
+	public async setPresence(presence: "auto" | "away") {
+		for (const [teamId, web] of this.webMap) {
+			try {
+				await web.apiCall("users.setPresence", {
+					presence,
+				});
+			} catch (err) {
+				log.error("Error updating presence:", err);
+			}
+		}
+	}
+
+	public async setStatus(message: string, emoji?: string | null, expiration?: number | null) {
+		for (const [teamId, web] of this.webMap) {
+			try {
+				if (this.teams.get(teamId)!.isBotToken()) {
+					continue;
+				}
+				await web.apiCall("users.profile.set", {
+					profile: {
+						status_text: message,
+						status_emoji: emoji || "",
+						status_expiration: expiration || 0,
+					},
+				});
+			} catch (err) {
+				log.error("Error updating status:", err);
+			}
+		}
+	}
+
 	public async disconnect() {
 		log.info("Disconnecting...");
 		this.shouldDisconnect = true;

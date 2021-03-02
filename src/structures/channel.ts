@@ -169,7 +169,7 @@ export class Channel extends Base {
 	}
 
 	public async sendCommand(command: string, parameters?: string): Promise<string> {
-		if (this.isBotToken()) {
+		if (this.team.isBotToken()) {
 			throw new Error("Not available with bot tokens");
 		}
 		await this.join();
@@ -185,7 +185,7 @@ export class Channel extends Base {
 	public async sendMeMessage(sendable: SendableType): Promise<string> {
 		await this.join();
 		const send = this.resolveSendable(sendable);
-		if (this.isBotToken()) {
+		if (this.team.isBotToken()) {
 			send.text = `_${send.text}_`;
 			return await this.sendMessage(send);
 		}
@@ -261,7 +261,7 @@ export class Channel extends Base {
 		const msg: ISendMessage = typeof sendable === "string" ? {
 			text: sendable,
 		} : sendable;
-		if (this.isBotToken() && msg.blocks && msg.blocks[0] && msg.blocks[0].type === "rich_text") {
+		if (this.team.isBotToken() && msg.blocks && msg.blocks[0] && msg.blocks[0].type === "rich_text") {
 			delete msg.blocks;
 		}
 		return msg;
@@ -285,10 +285,5 @@ export class Channel extends Base {
 				send.thread_ts = opts.threadTs;
 			}
 		}
-	}
-
-	private isBotToken(): boolean {
-		const token = this.client.tokens.get(this.team.id) || "";
-		return token.startsWith("xoxb");
 	}
 }

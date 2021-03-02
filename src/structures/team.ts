@@ -128,4 +128,9 @@ export class Team extends IconBase {
 		}
 		this.partial = false;
 	}
+
+	public isBotToken(): boolean {
+		const token = this.client.tokens.get(this.id) || "";
+		return token.startsWith("xoxb");
+	}
 }
