@@ -153,6 +153,10 @@ export class Channel extends Base {
 		this.joined = true;
 	}
 
+	public async sendTyping() {
+		await this.client.rtm(this.team.id).sendTyping(this.id);
+	}
+
 	public async sendMessage(sendable: SendableType, opts?: ISendOpts): Promise<string> {
 		await this.join();
 		const send: any = { // tslint:disable-line no-any
