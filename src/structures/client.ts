@@ -880,7 +880,9 @@ export class Client extends EventEmitter {
 	}
 
 	private async handleMessageEvent(data) {
-		if (["channel_join", "channel_name", "group_join", "group_name", "message_replied"].includes(data.subtype)) {
+		if ([
+			"channel_join", "channel_name", "group_join", "group_name", "message_replied", "channel_topic", "group_topic",
+		].includes(data.subtype)) {
 			return;
 		}
 		log.silly("Processing message with data", data);
